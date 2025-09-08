@@ -2,6 +2,7 @@ import os
 import subprocess
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
 
@@ -10,6 +11,41 @@ def run(cmd: list[str]) -> None:
     # Redirect stderr to /dev/null to suppress FFmpeg decoder errors
     with open('/dev/null', 'w') as devnull:
         subprocess.run(cmd, check=True, stderr=devnull)
+
+
+def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str, preset: str) -> tuple[str, float, float]:
+    """Process a single VOB file and return timing information."""
+    vob_start_time = time.time()
+    logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
+    
+    ffmpeg_start_time = time.time()
+    cmd = [
+        "ffmpeg", "-y",
+        "-hide_banner", "-loglevel", "quiet",
+        "-probesize", "200M", "-analyzeduration", "200M",
+        "-fflags", "+genpts+igndts+ignidx",
+        "-err_detect", "ignore_err",
+        "-max_error_rate", "1.0",
+        "-threads", "0",  # Use all available threads for this VOB
+        "-flags", "+low_delay",
+        "-i", vob_path,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-c:v", encoder, "-preset", preset, "-crf", "18",
+        "-vf", "bwdif=mode=1:parity=auto",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-avoid_negative_ts", "make_zero",
+        "-max_muxing_queue_size", "1024",
+        vob_output,
+    ]
+    run(cmd)
+    
+    ffmpeg_elapsed = time.time() - ffmpeg_start_time
+    vob_elapsed = time.time() - vob_start_time
+    logger.info("Successfully processed VOB file {} to {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
+              vob_file, os.path.basename(vob_output), ffmpeg_elapsed, vob_elapsed)
+    
+    return vob_file, ffmpeg_elapsed, vob_elapsed
 
 
 
@@ -120,49 +156,51 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 
                 if vob_files:
                     logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
-                    # Process VOB files (same logic as before)
+                    
+                    # Get dynamic encoder settings
+                    encoder = get_video_encoder()
+                    preset = get_encoder_preset()
+                    
+                    # Prepare VOB processing tasks
                     vob_files.sort()
-                    for i, vob_file in enumerate(vob_files):
-                        vob_start_time = time.time()
-                        vob_path = os.path.join(video_ts_path, vob_file)
+                    processing_start_time = time.time()
+                    
+                    # Determine optimal thread count (use CPU cores, but limit to avoid overwhelming)
+                    import multiprocessing
+                    max_workers = min(len(vob_files), multiprocessing.cpu_count(), 8)  # Cap at 8 to avoid overwhelming
+                    logger.info("Processing {} VOB files using {} parallel workers", len(vob_files), max_workers)
+                    
+                    # Process VOB files in parallel
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        # Submit all VOB processing tasks
+                        future_to_vob = {}
+                        for i, vob_file in enumerate(vob_files):
+                            vob_path = os.path.join(video_ts_path, vob_file)
+                            
+                            if len(vob_files) == 1:
+                                vob_output = output_mp4
+                            else:
+                                base_name = os.path.splitext(output_mp4)[0]
+                                vob_output = f"{base_name}_part{i+1}.mp4"
+                            
+                            future = executor.submit(process_vob_file, vob_path, vob_output, vob_file, encoder, preset)
+                            future_to_vob[future] = vob_file
                         
-                        if len(vob_files) == 1:
-                            vob_output = output_mp4
-                        else:
-                            base_name = os.path.splitext(output_mp4)[0]
-                            vob_output = f"{base_name}_part{i+1}.mp4"
-                        
-                        logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
-                        
-                        ffmpeg_start_time = time.time()
-                        # Get dynamic encoder settings
-                        encoder = get_video_encoder()
-                        preset = get_encoder_preset()
-                        
-                        cmd = [
-                            "ffmpeg", "-y",
-                            "-hide_banner", "-loglevel", "quiet",
-                            "-probesize", "200M", "-analyzeduration", "200M",
-                            "-fflags", "+genpts+igndts+ignidx",
-                            "-err_detect", "ignore_err",
-                            "-max_error_rate", "1.0",
-                            "-threads", "1",
-                            "-flags", "+low_delay",
-                            "-i", vob_path,
-                            "-map", "0:v:0", "-map", "0:a:0?",
-                            "-c:v", encoder, "-preset", preset, "-crf", "18",
-                            "-vf", "bwdif=mode=1:parity=auto",
-                            "-c:a", "aac", "-b:a", "192k",
-                            "-movflags", "+faststart",
-                            "-avoid_negative_ts", "make_zero",
-                            "-max_muxing_queue_size", "1024",
-                            vob_output,
-                        ]
-                        run(cmd)
-                        ffmpeg_elapsed = time.time() - ffmpeg_start_time
-                        vob_elapsed = time.time() - vob_start_time
-                        logger.info("Successfully processed VOB file {} to {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
-                                  vob_file, os.path.basename(vob_output), ffmpeg_elapsed, vob_elapsed)
+                        # Wait for all tasks to complete
+                        completed_count = 0
+                        for future in as_completed(future_to_vob):
+                            vob_file = future_to_vob[future]
+                            try:
+                                processed_file, ffmpeg_elapsed, vob_elapsed = future.result()
+                                completed_count += 1
+                                logger.info("Completed {}/{} VOB files: {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
+                                          completed_count, len(vob_files), processed_file, ffmpeg_elapsed, vob_elapsed)
+                            except Exception as e:
+                                logger.error("Failed to process VOB file {}: {}", vob_file, e)
+                                raise
+                    
+                    processing_elapsed = time.time() - processing_start_time
+                    logger.info("All {} VOB files processed in {:.1f}s (parallel processing)", len(vob_files), processing_elapsed)
                     
                     # Clean up
                     shutil.rmtree(extract_dir, ignore_errors=True)
