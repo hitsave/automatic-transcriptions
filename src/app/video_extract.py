@@ -28,6 +28,21 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
     logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
     
     ffmpeg_start_time = time.time()
+    # First, check if the VOB file has video streams
+    probe_cmd = [
+        "ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0", vob_path
+    ]
+    try:
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+        has_video = probe_result.returncode == 0 and "video" in probe_result.stdout
+        if not has_video:
+            logger.warning("VOB file {} has no video streams, skipping", vob_file)
+            return vob_file, 0.0, 0.0
+    except Exception as e:
+        logger.warning("Could not probe VOB file {}: {}", vob_file, e)
+        return vob_file, 0.0, 0.0
+
     cmd = [
         "ffmpeg", "-y",
         "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
@@ -104,12 +119,32 @@ def is_gpu_available() -> bool:
         if not gpu_available:
             return False
             
-        # Check if FFmpeg has NVENC support
+        # Check if FFmpeg has NVENC support and can actually use it
         try:
             result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=10)
             nvenc_available = 'h264_nvenc' in result.stdout
             logger.debug("FFmpeg NVENC support: {}", nvenc_available)
-            return nvenc_available
+            
+            if not nvenc_available:
+                return False
+                
+            # Test if NVENC actually works by trying to create a simple test
+            try:
+                test_cmd = [
+                    'ffmpeg', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x240:rate=1',
+                    '-c:v', 'h264_nvenc', '-preset', 'p7', '-f', 'null', '-'
+                ]
+                test_result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=10)
+                nvenc_works = test_result.returncode == 0
+                logger.debug("NVENC functionality test: {}", nvenc_works)
+                return nvenc_works
+            except subprocess.TimeoutExpired:
+                logger.warning("NVENC functionality test timed out")
+                return False
+            except Exception as e:
+                logger.warning("NVENC functionality test failed: {}", e)
+                return False
+                
         except subprocess.TimeoutExpired:
             logger.warning("FFmpeg encoder check timed out")
             return False
