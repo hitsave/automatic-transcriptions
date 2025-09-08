@@ -3,13 +3,12 @@ FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04
 # System deps: ffmpeg with NVENC, p7zip for ISO extraction, libdvd-pkg for DVD copy protection
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       software-properties-common \
+       wget \
+       xz-utils \
        ca-certificates \
        tzdata \
-    && add-apt-repository ppa:savoury1/ffmpeg4 \
-    && apt-get update \
+    && wget -O - https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ --strip-components=1 -C /usr/local \
     && apt-get install -y --no-install-recommends \
-       ffmpeg \
        p7zip-full \
        libdvd-pkg \
     && dpkg-reconfigure libdvd-pkg \
