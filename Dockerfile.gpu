@@ -8,6 +8,8 @@ RUN apt-get update \
        ca-certificates \
        tzdata \
     && wget -O - https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ --strip-components=1 -C /usr/local \
+    && ln -s /usr/local/bin/ffmpeg /usr/bin/ffmpeg \
+    && ln -s /usr/local/bin/ffprobe /usr/bin/ffprobe \
     && apt-get install -y --no-install-recommends \
        p7zip-full \
        libdvd-pkg \

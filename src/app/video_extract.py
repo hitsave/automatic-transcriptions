@@ -17,12 +17,27 @@ def is_gpu_available() -> bool:
     """Check if NVIDIA GPU is available for encoding."""
     try:
         # Check if NVIDIA device exists
-        if os.path.exists('/dev/nvidia0'):
-            # Also check if FFmpeg has NVENC support
-            result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True)
-            return 'h264_nvenc' in result.stdout
-        return False
-    except:
+        nvidia_device = os.path.exists('/dev/nvidia0')
+        logger.debug("NVIDIA device /dev/nvidia0 exists: {}", nvidia_device)
+        
+        if not nvidia_device:
+            return False
+            
+        # Check if FFmpeg has NVENC support
+        try:
+            result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=10)
+            nvenc_available = 'h264_nvenc' in result.stdout
+            logger.debug("FFmpeg NVENC support: {}", nvenc_available)
+            return nvenc_available
+        except subprocess.TimeoutExpired:
+            logger.warning("FFmpeg encoder check timed out")
+            return False
+        except Exception as e:
+            logger.warning("Error checking FFmpeg encoders: {}", e)
+            return False
+            
+    except Exception as e:
+        logger.warning("Error in GPU detection: {}", e)
         return False
 
 
