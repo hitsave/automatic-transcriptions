@@ -27,6 +27,7 @@ def process(
     local_cache: str = Option("/data", help="Local working directory root (/data)"),
     language: str = Option("auto", help="Source language or 'auto' for detection"),
     model_size: str = Option("medium", help="WhisperX model size"),
+    dry_run: bool = Option(False, help="Dry run mode - process locally but don't upload to S3"),
 ):
     if not src_bucket:
         logger.error("WASABI_SRC_BUCKET environment variable is required")
@@ -35,7 +36,11 @@ def process(
         logger.error("WASABI_DST_BUCKET environment variable is required")
         raise SystemExit(1)
     
-    logger.info("Starting pipeline")
+    if dry_run:
+        logger.info("Starting pipeline in DRY RUN mode - no uploads will be performed")
+    else:
+        logger.info("Starting pipeline")
+    
     run_pipeline(
         src_bucket=src_bucket,
         prefix=prefix,
@@ -46,6 +51,7 @@ def process(
         local_cache=local_cache,
         language=language,
         model_size=model_size,
+        dry_run=dry_run,
     )
 
 
