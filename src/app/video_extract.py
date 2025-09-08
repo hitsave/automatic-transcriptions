@@ -13,6 +13,33 @@ def run(cmd: list[str]) -> None:
 
 
 
+def is_gpu_available() -> bool:
+    """Check if NVIDIA GPU is available for encoding."""
+    try:
+        # Check if NVIDIA device exists
+        return os.path.exists('/dev/nvidia0')
+    except:
+        return False
+
+
+def get_video_encoder() -> str:
+    """Get the best available video encoder (GPU or CPU)."""
+    if is_gpu_available():
+        logger.info("GPU detected, using NVENC encoder")
+        return "h264_nvenc"
+    else:
+        logger.info("No GPU detected, using CPU encoder")
+        return "libx264"
+
+
+def get_encoder_preset() -> str:
+    """Get the appropriate preset for the selected encoder."""
+    if is_gpu_available():
+        return "p7"  # NVENC preset (p7 = high quality, slowest)
+    else:
+        return "slow"  # x264 preset
+
+
 def check_disk_space(path: str, required_gb: int = 10) -> None:
     """Check if there's enough disk space available."""
     statvfs = os.statvfs(path)
@@ -66,6 +93,10 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                         logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
                         
                         ffmpeg_start_time = time.time()
+                        # Get dynamic encoder settings
+                        encoder = get_video_encoder()
+                        preset = get_encoder_preset()
+                        
                         cmd = [
                             "ffmpeg", "-y",
                             "-hide_banner", "-loglevel", "quiet",
@@ -77,7 +108,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                             "-flags", "+low_delay",
                             "-i", vob_path,
                             "-map", "0:v:0", "-map", "0:a:0?",
-                            "-c:v", "libx264", "-preset", "slow", "-crf", "18",
+                            "-c:v", encoder, "-preset", preset, "-crf", "18",
                             "-vf", "bwdif=mode=1:parity=auto",
                             "-c:a", "aac", "-b:a", "192k",
                             "-movflags", "+faststart",
@@ -106,6 +137,10 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
         try:
             # Disk space is checked at the pipeline level
             
+            # Get dynamic encoder settings
+            encoder = get_video_encoder()
+            preset = get_encoder_preset()
+            
             cmd = [
                 "ffmpeg", "-y",
                 "-hide_banner", "-loglevel", "quiet",  # Suppress all output
@@ -117,7 +152,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 "-flags", "+low_delay",  # Low delay mode
                 "-i", source_path,
                 "-map", "0:v:0", "-map", "0:a:0?",
-                "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
+                "-c:v", encoder, "-preset", preset, "-crf", "18",  # Dynamic encoder selection
                 "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
                 "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
                 "-movflags", "+faststart",  # Web optimization

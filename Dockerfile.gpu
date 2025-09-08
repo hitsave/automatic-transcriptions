@@ -1,0 +1,42 @@
+FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04
+
+# System deps: ffmpeg with NVENC, p7zip for ISO extraction, libdvd-pkg for DVD copy protection
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       software-properties-common \
+       ca-certificates \
+       tzdata \
+    && add-apt-repository ppa:savoury1/ffmpeg4 \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ffmpeg \
+       p7zip-full \
+       libdvd-pkg \
+    && dpkg-reconfigure libdvd-pkg \
+    && apt-get dist-clean
+
+# Install Python 3.11
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       python3.11 \
+       python3.11-dev \
+       python3.11-distutils \
+       python3-pip \
+    && ln -s /usr/bin/python3.11 /usr/bin/python \
+    && ln -s /usr/bin/python3.11 /usr/bin/python3
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+# Create directories for data volumes
+RUN mkdir -p /data/incoming /data/work /data/output
+
+COPY src/ /app/src/
+
+ENTRYPOINT ["python", "-m", "src.app.main"]

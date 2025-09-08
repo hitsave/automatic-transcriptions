@@ -1,0 +1,25 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - SOURCE_BUCKET=${SOURCE_BUCKET}
+      - DEST_BUCKET=${DEST_BUCKET}
+      - OUTPUT_PREFIX=${OUTPUT_PREFIX}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data/incoming:/data/incoming
+      - ./data/work:/data/work
+      - ./data/output:/data/output
+    command: ["--help"]
