@@ -30,7 +30,7 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
     ffmpeg_start_time = time.time()
     cmd = [
         "ffmpeg", "-y",
-        "-hide_banner", "-loglevel", "quiet",
+        "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
         "-probesize", "200M", "-analyzeduration", "200M",
         "-fflags", "+genpts+igndts+ignidx",
         "-err_detect", "ignore_err",
@@ -236,7 +236,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
             
             cmd = [
                 "ffmpeg", "-y",
-                "-hide_banner", "-loglevel", "quiet",  # Suppress all output
+                "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
                 "-probesize", "200M", "-analyzeduration", "200M",
                 "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
                 "-err_detect", "ignore_err",  # Ignore errors and continue
