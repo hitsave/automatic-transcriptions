@@ -63,25 +63,25 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     
                     logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
                     
-                           cmd = [
-                               "ffmpeg", "-y",
-                               "-hide_banner", "-loglevel", "quiet",  # Suppress all output
-                               "-probesize", "200M", "-analyzeduration", "200M",
-                               "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
-                               "-err_detect", "ignore_err",  # Ignore errors and continue
-                               "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
-                               "-threads", "1",  # Single thread to reduce noise
-                               "-flags", "+low_delay",  # Low delay mode
-                               "-i", vob_path,
-                               "-map", "0:v:0", "-map", "0:a:0?",
-                               "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
-                               "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
-                               "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
-                               "-movflags", "+faststart",  # Web optimization
-                               "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-                               "-max_muxing_queue_size", "1024",  # Increase muxing queue
-                               vob_output,
-                           ]
+                    cmd = [
+                        "ffmpeg", "-y",
+                        "-hide_banner", "-loglevel", "quiet",  # Suppress all output
+                        "-probesize", "200M", "-analyzeduration", "200M",
+                        "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
+                        "-err_detect", "ignore_err",  # Ignore errors and continue
+                        "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
+                        "-threads", "1",  # Single thread to reduce noise
+                        "-flags", "+low_delay",  # Low delay mode
+                        "-i", vob_path,
+                        "-map", "0:v:0", "-map", "0:a:0?",
+                        "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
+                        "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
+                        "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
+                        "-movflags", "+faststart",  # Web optimization
+                        "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
+                        "-max_muxing_queue_size", "1024",  # Increase muxing queue
+                        vob_output,
+                    ]
                     run(cmd)
                     logger.info("Successfully processed VOB file {} to {}", vob_file, os.path.basename(vob_output))
                 
@@ -103,25 +103,25 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
         try:
             # Disk space is checked at the pipeline level
             
-                   cmd = [
-                       "ffmpeg", "-y",
-                       "-hide_banner", "-loglevel", "quiet",  # Suppress all output
-                       "-probesize", "200M", "-analyzeduration", "200M",
-                       "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
-                       "-err_detect", "ignore_err",  # Ignore errors and continue
-                       "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
-                       "-threads", "1",  # Single thread to reduce noise
-                       "-flags", "+low_delay",  # Low delay mode
-                       "-i", source_path,
-                       "-map", "0:v:0", "-map", "0:a:0?",
-                       "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
-                       "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
-                       "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
-                       "-movflags", "+faststart",  # Web optimization
-                       "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-                       "-max_muxing_queue_size", "1024",  # Increase muxing queue
-                       output_mp4,
-                   ]
+            cmd = [
+                "ffmpeg", "-y",
+                "-hide_banner", "-loglevel", "quiet",  # Suppress all output
+                "-probesize", "200M", "-analyzeduration", "200M",
+                "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
+                "-err_detect", "ignore_err",  # Ignore errors and continue
+                "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
+                "-threads", "1",  # Single thread to reduce noise
+                "-flags", "+low_delay",  # Low delay mode
+                "-i", source_path,
+                "-map", "0:v:0", "-map", "0:a:0?",
+                "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
+                "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
+                "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
+                "-movflags", "+faststart",  # Web optimization
+                "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
+                "-max_muxing_queue_size", "1024",  # Increase muxing queue
+                output_mp4,
+            ]
             run(cmd)
             logger.info("Converted ISO to MP4 with re-encoding")
             return
