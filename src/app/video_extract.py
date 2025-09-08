@@ -6,11 +6,20 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
 
-def run(cmd: list[str]) -> None:
+def run(cmd: list[str], capture_errors: bool = False) -> None:
     logger.debug("Running: {}", " ".join(cmd))
-    # Redirect stderr to /dev/null to suppress FFmpeg decoder errors
-    with open('/dev/null', 'w') as devnull:
-        subprocess.run(cmd, check=True, stderr=devnull)
+    if capture_errors:
+        # Capture stderr to see what's failing
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            logger.error("Command failed with exit code {}: {}", result.returncode, " ".join(cmd))
+            logger.error("STDOUT: {}", result.stdout)
+            logger.error("STDERR: {}", result.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+    else:
+        # Redirect stderr to /dev/null to suppress FFmpeg decoder errors
+        with open('/dev/null', 'w') as devnull:
+            subprocess.run(cmd, check=True, stderr=devnull)
 
 
 def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str, preset: str) -> tuple[str, float, float]:
@@ -38,7 +47,11 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         "-max_muxing_queue_size", "1024",
         vob_output,
     ]
-    run(cmd)
+    try:
+        run(cmd, capture_errors=True)
+    except subprocess.CalledProcessError as e:
+        logger.error("Failed to process VOB file {}: {}", vob_file, e)
+        raise
     
     ffmpeg_elapsed = time.time() - ffmpeg_start_time
     vob_elapsed = time.time() - vob_start_time
@@ -240,7 +253,11 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 "-max_muxing_queue_size", "1024",  # Increase muxing queue
                 output_mp4,
             ]
-            run(cmd)
+            try:
+                run(cmd, capture_errors=True)
+            except subprocess.CalledProcessError as e:
+                logger.error("Direct FFmpeg conversion failed: {}", e)
+                raise
             logger.info("Converted ISO to MP4 with re-encoding")
             return
         except Exception as e:
