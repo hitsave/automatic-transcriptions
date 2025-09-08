@@ -35,7 +35,9 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
     if lower.endswith(".iso"):
         # Use 7z to extract VIDEO_TS from ISO, then vobcopy
         try:
-            temp_dir = os.path.join(os.path.dirname(output_mp4), "temp_vobcopy")
+            # Create unique temp directory per DVD to avoid conflicts
+            dvd_name = os.path.splitext(os.path.basename(source_path))[0]
+            temp_dir = os.path.join(os.path.dirname(output_mp4), f"temp_vobcopy_{dvd_name}")
             # Clean up any existing temp directory to avoid conflicts
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
@@ -59,8 +61,8 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 run_vobcopy(vobcopy_cmd)
                 
                 # Find VOB files in the vobcopy output
-                dvd_name = os.path.splitext(os.path.basename(source_path))[0]
-                vobcopy_actual_dir = os.path.join(temp_dir, dvd_name)
+                # vobcopy creates VIDEO_TS directory directly in temp_dir when using -i with directory
+                vobcopy_actual_dir = os.path.join(temp_dir, "VIDEO_TS")
                 vob_files = [f for f in os.listdir(vobcopy_actual_dir) if f.endswith('.vob')]
                 
                 if vob_files:
