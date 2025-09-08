@@ -33,8 +33,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
     
     lower = source_path.lower()
     if lower.endswith(".iso"):
-        # Try multiple approaches for ISO extraction
-        # First try: Use vobcopy to extract main title with CSS decryption
+        # Use 7z to extract VIDEO_TS from ISO, then vobcopy
         try:
             temp_dir = os.path.join(os.path.dirname(output_mp4), "temp_vobcopy")
             # Clean up any existing temp directory to avoid conflicts
@@ -42,86 +41,6 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 shutil.rmtree(temp_dir, ignore_errors=True)
             os.makedirs(temp_dir, exist_ok=True)
             
-            # Use vobcopy to extract the main title with CSS decryption
-            # -i: input ISO, -o: output dir, -m: main title (longest title)
-            # -f: force extraction even if vobcopy thinks there's not enough space (it's often wrong)
-            # Use the temp directory directly - vobcopy will create its structure inside
-            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", temp_dir, "-m", "-f"]
-            logger.info("Running vobcopy command: {}", " ".join(vobcopy_cmd))
-            import time
-            start_time = time.time()
-            run_vobcopy(vobcopy_cmd)
-            elapsed = time.time() - start_time
-            logger.info("Vobcopy completed successfully in {:.1f} seconds", elapsed)
-            
-            # Find all VOB files and process each as a separate video
-            # vobcopy creates a directory named after the DVD, so we need to look there
-            dvd_name = os.path.splitext(os.path.basename(source_path))[0]  # E3_2004
-            vobcopy_actual_dir = os.path.join(temp_dir, dvd_name)
-            vob_files = [f for f in os.listdir(vobcopy_actual_dir) if f.endswith('.vob')]
-            logger.info("Found {} VOB files: {}", len(vob_files), vob_files)
-            if vob_files:
-                # Sort VOB files by name to ensure correct order (e.g., E3_200420-1.vob, E3_200420-2.vob)
-                vob_files.sort()
-                
-                # Process each VOB file as a separate video
-                for i, vob_file in enumerate(vob_files):
-                    vob_start_time = time.time()
-                    vob_path = os.path.join(vobcopy_actual_dir, vob_file)
-                    
-                    # Create separate output file for each VOB
-                    if len(vob_files) == 1:
-                        # Single VOB - use original output name
-                        vob_output = output_mp4
-                    else:
-                        # Multiple VOBs - add suffix (e.g., _part1, _part2)
-                        base_name = os.path.splitext(output_mp4)[0]
-                        vob_output = f"{base_name}_part{i+1}.mp4"
-                    
-                    logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
-                    
-                    ffmpeg_start_time = time.time()
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-hide_banner", "-loglevel", "quiet",  # Suppress all output
-                        "-probesize", "200M", "-analyzeduration", "200M",
-                        "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
-                        "-err_detect", "ignore_err",  # Ignore errors and continue
-                        "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
-                        "-threads", "1",  # Single thread to reduce noise
-                        "-flags", "+low_delay",  # Low delay mode
-                        "-i", vob_path,
-                        "-map", "0:v:0", "-map", "0:a:0?",
-                        "-c:v", "libx264", "-preset", "slow", "-crf", "18",  # High quality H.264 encoding
-                        "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
-                        "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
-                        "-movflags", "+faststart",  # Web optimization
-                        "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-                        "-max_muxing_queue_size", "1024",  # Increase muxing queue
-                        vob_output,
-                    ]
-                    run(cmd)
-                    ffmpeg_elapsed = time.time() - ffmpeg_start_time
-                    vob_elapsed = time.time() - vob_start_time
-                    logger.info("Successfully processed VOB file {} to {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
-                              vob_file, os.path.basename(vob_output), ffmpeg_elapsed, vob_elapsed)
-                
-                # If we created multiple files, we need to return the first one for the pipeline
-                # The pipeline will need to be updated to handle multiple outputs
-                if len(vob_files) > 1:
-                    # Return the first VOB's output for now
-                    base_name = os.path.splitext(output_mp4)[0]
-                    output_mp4 = f"{base_name}_part1.mp4"
-                
-                # Clean up temp directory
-                shutil.rmtree(vobcopy_actual_dir, ignore_errors=True)
-                logger.info("Extracted using vobcopy with CSS decryption")
-                return
-        except Exception as e:
-            logger.warning("Vobcopy extraction failed: {}, trying 7z extraction method", e)
-        
-        # Second try: Use 7z to extract VIDEO_TS from ISO, then vobcopy
-        try:
             # Extract VIDEO_TS from ISO using 7z
             extract_dir = os.path.join(os.path.dirname(output_mp4), "temp_extract")
             if os.path.exists(extract_dir):
