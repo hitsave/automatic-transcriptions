@@ -39,10 +39,10 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
             temp_dir = os.path.join(os.path.dirname(output_mp4), "temp_vobcopy")
             os.makedirs(temp_dir, exist_ok=True)
             
-            # Use vobcopy to extract only the main title (title 1) with CSS decryption
-            # -i: input ISO, -o: output dir, -1: extract title 1 only, -m: main title
+            # Use vobcopy to extract the main title with CSS decryption
+            # -i: input ISO, -o: output dir, -m: main title (longest title)
             # -f: force extraction even if vobcopy thinks there's not enough space (it's often wrong)
-            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", temp_dir, "-1", "-m", "-f"]
+            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", temp_dir, "-m", "-f"]
             logger.info("Running vobcopy command: {}", " ".join(vobcopy_cmd))
             import time
             start_time = time.time()
