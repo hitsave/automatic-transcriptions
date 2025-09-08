@@ -11,10 +11,6 @@ def run(cmd: list[str]) -> None:
         subprocess.run(cmd, check=True, stderr=devnull)
 
 
-def run_vobcopy(cmd: list[str]) -> None:
-    logger.debug("Running vobcopy: {}", " ".join(cmd))
-    # Don't redirect stderr for vobcopy - it needs stderr for CSS key retrieval
-    subprocess.run(cmd, check=True)
 
 
 def check_disk_space(path: str, required_gb: int = 10) -> None:
@@ -33,16 +29,8 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
     
     lower = source_path.lower()
     if lower.endswith(".iso"):
-        # Use 7z to extract VIDEO_TS from ISO, then vobcopy
+        # Use 7z to extract VIDEO_TS from ISO, then process VOB files directly
         try:
-            # Create unique temp directory per DVD to avoid conflicts
-            dvd_name = os.path.splitext(os.path.basename(source_path))[0]
-            temp_dir = os.path.join(os.path.dirname(output_mp4), f"temp_vobcopy_{dvd_name}")
-            # Clean up any existing temp directory to avoid conflicts
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            os.makedirs(temp_dir, exist_ok=True)
-            
             # Extract VIDEO_TS from ISO using 7z
             extract_dir = os.path.join(os.path.dirname(output_mp4), "temp_extract")
             if os.path.exists(extract_dir):
@@ -53,17 +41,13 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
             extract_cmd = ["7z", "x", source_path, "-o" + extract_dir, "VIDEO_TS"]
             run(extract_cmd)
             
-            # Now use vobcopy on the extracted VIDEO_TS directory
+            # Use the VOB files directly from 7z extraction (no need for vobcopy)
             video_ts_path = os.path.join(extract_dir, "VIDEO_TS")
             if os.path.exists(video_ts_path):
-                logger.info("Using vobcopy on extracted VIDEO_TS directory")
-                vobcopy_cmd = ["vobcopy", "-i", video_ts_path, "-o", temp_dir, "-m", "-f"]
-                run_vobcopy(vobcopy_cmd)
+                logger.info("Using VOB files directly from 7z extraction")
                 
-                # Find VOB files in the vobcopy output
-                # vobcopy creates VIDEO_TS directory directly in temp_dir when using -i with directory
-                vobcopy_actual_dir = os.path.join(temp_dir, "VIDEO_TS")
-                vob_files = [f for f in os.listdir(vobcopy_actual_dir) if f.endswith('.vob')]
+                # Find VOB files in the 7z-extracted VIDEO_TS directory
+                vob_files = [f for f in os.listdir(video_ts_path) if f.endswith('.vob')]
                 
                 if vob_files:
                     logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
@@ -71,7 +55,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     vob_files.sort()
                     for i, vob_file in enumerate(vob_files):
                         vob_start_time = time.time()
-                        vob_path = os.path.join(vobcopy_actual_dir, vob_file)
+                        vob_path = os.path.join(video_ts_path, vob_file)
                         
                         if len(vob_files) == 1:
                             vob_output = output_mp4
@@ -109,8 +93,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     
                     # Clean up
                     shutil.rmtree(extract_dir, ignore_errors=True)
-                    shutil.rmtree(vobcopy_actual_dir, ignore_errors=True)
-                    logger.info("Extracted using 7z + vobcopy method")
+                    logger.info("Extracted using 7z method")
                     return
                 else:
                     logger.warning("No VOB files found after 7z extraction")

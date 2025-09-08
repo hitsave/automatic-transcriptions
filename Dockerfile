@@ -7,7 +7,6 @@ RUN echo "deb http://deb.debian.org/debian trixie main contrib non-free" > /etc/
        ffmpeg \
        p7zip-full \
        libdvd-pkg \
-       vobcopy \
        ca-certificates \
        tzdata \
     && dpkg-reconfigure libdvd-pkg \
