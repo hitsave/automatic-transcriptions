@@ -137,6 +137,8 @@ def is_gpu_available() -> bool:
                 test_result = subprocess.run(test_cmd, capture_output=True, text=True, timeout=10)
                 nvenc_works = test_result.returncode == 0
                 logger.debug("NVENC functionality test: {}", nvenc_works)
+                if not nvenc_works:
+                    logger.debug("NVENC test stderr: {}", test_result.stderr)
                 return nvenc_works
             except subprocess.TimeoutExpired:
                 logger.warning("NVENC functionality test timed out")
@@ -157,12 +159,17 @@ def is_gpu_available() -> bool:
         return False
 
 
+# Cache GPU detection result to avoid repeated checks
+_gpu_available_cache = None
+
 def get_video_encoder() -> str:
     """Get the best available video encoder (GPU or CPU)."""
-    gpu_available = is_gpu_available()
-    logger.info("GPU detection result: {}", gpu_available)
+    global _gpu_available_cache
+    if _gpu_available_cache is None:
+        _gpu_available_cache = is_gpu_available()
+        logger.info("GPU detection result: {}", _gpu_available_cache)
     
-    if gpu_available:
+    if _gpu_available_cache:
         logger.info("GPU detected, using NVENC encoder")
         return "h264_nvenc"
     else:
@@ -172,7 +179,11 @@ def get_video_encoder() -> str:
 
 def get_encoder_preset() -> str:
     """Get the appropriate preset for the selected encoder."""
-    if is_gpu_available():
+    global _gpu_available_cache
+    if _gpu_available_cache is None:
+        _gpu_available_cache = is_gpu_available()
+    
+    if _gpu_available_cache:
         return "p7"  # NVENC preset (p7 = high quality, slowest)
     else:
         return "slow"  # x264 preset
