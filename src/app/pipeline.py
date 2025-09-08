@@ -274,16 +274,18 @@ def run_pipeline(
             # Force re-download regardless of local file existence
             logger.info("Force download enabled, re-downloading {}", key)
             local_path = s3.download_object(src_bucket, key, item_dir)
-        elif os.path.exists(local_path) and not skip_checksum:
-            # Verify file integrity using checksums
-            if verify_file_integrity(local_path, main_file, s3, src_bucket, key):
-                logger.info("File {} already exists locally and is verified complete, skipping download", local_path)
+        elif os.path.exists(local_path):
+            # File exists locally - check if we should verify it
+            if skip_checksum:
+                # Skip checksum verification, use existing file
+                logger.info("File {} exists locally, checksum verification disabled, using existing file", local_path)
             else:
-                logger.warning("File {} exists but checksum verification failed, re-downloading", local_path)
-                local_path = s3.download_object(src_bucket, key, item_dir)
-        elif os.path.exists(local_path) and skip_checksum:
-            # Skip checksum verification, use existing file
-            logger.info("File {} exists locally, checksum verification disabled, using existing file", local_path)
+                # Verify file integrity using checksums
+                if verify_file_integrity(local_path, main_file, s3, src_bucket, key):
+                    logger.info("File {} already exists locally and is verified complete, skipping download", local_path)
+                else:
+                    logger.warning("File {} exists but checksum verification failed, re-downloading", local_path)
+                    local_path = s3.download_object(src_bucket, key, item_dir)
         else:
             # File doesn't exist locally, download it
             local_path = s3.download_object(src_bucket, key, item_dir)
