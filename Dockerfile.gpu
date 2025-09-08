@@ -1,4 +1,4 @@
-FROM nvidia/cuda:13.0.0-runtime-ubuntu24.04
+FROM nvidia/cuda:13.0.0-devel-ubuntu24.04
 
 # System deps: ffmpeg with NVENC, p7zip for ISO extraction, libdvd-pkg for DVD copy protection
 RUN apt-get update \

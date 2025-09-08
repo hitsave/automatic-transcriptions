@@ -16,11 +16,30 @@ def run(cmd: list[str]) -> None:
 def is_gpu_available() -> bool:
     """Check if NVIDIA GPU is available for encoding."""
     try:
-        # Check if NVIDIA device exists
+        # Check multiple ways to detect GPU availability
+        gpu_available = False
+        
+        # Method 1: Check for NVIDIA device files
         nvidia_device = os.path.exists('/dev/nvidia0')
         logger.debug("NVIDIA device /dev/nvidia0 exists: {}", nvidia_device)
         
-        if not nvidia_device:
+        # Method 2: Check for CUDA_VISIBLE_DEVICES environment variable
+        cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+        logger.debug("CUDA_VISIBLE_DEVICES: {}", cuda_visible_devices)
+        
+        # Method 3: Check if nvidia-smi works
+        try:
+            result = subprocess.run(['nvidia-smi'], capture_output=True, text=True, timeout=5)
+            nvidia_smi_works = result.returncode == 0 and 'NVIDIA' in result.stdout
+            logger.debug("nvidia-smi works: {}", nvidia_smi_works)
+        except:
+            nvidia_smi_works = False
+            logger.debug("nvidia-smi not available")
+        
+        # GPU is available if any method succeeds
+        gpu_available = nvidia_device or (cuda_visible_devices and cuda_visible_devices != '') or nvidia_smi_works
+        
+        if not gpu_available:
             return False
             
         # Check if FFmpeg has NVENC support
