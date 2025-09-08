@@ -77,11 +77,23 @@ def is_gpu_available() -> bool:
         cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
         logger.debug("CUDA_VISIBLE_DEVICES: {}", cuda_visible_devices)
         
-        # Method 3: Check if nvidia-smi works
+        # Method 3: Check if nvidia-smi works and driver version
         try:
             result = subprocess.run(['nvidia-smi'], capture_output=True, text=True, timeout=5)
             nvidia_smi_works = result.returncode == 0 and 'NVIDIA' in result.stdout
             logger.debug("nvidia-smi works: {}", nvidia_smi_works)
+            
+            # Check driver version for NVENC support (requires 570.0+)
+            if nvidia_smi_works:
+                import re
+                version_match = re.search(r'Driver Version: (\d+)\.(\d+)', result.stdout)
+                if version_match:
+                    major, minor = int(version_match.group(1)), int(version_match.group(2))
+                    driver_version = major * 100 + minor
+                    logger.debug("NVIDIA driver version: {}.{} ({})", major, minor, driver_version)
+                    if driver_version < 570:
+                        logger.warning("NVIDIA driver version {}.{} is too old for NVENC (requires 570.0+)", major, minor)
+                        return False
         except:
             nvidia_smi_works = False
             logger.debug("nvidia-smi not available")
@@ -224,44 +236,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
             else:
                 logger.warning("VIDEO_TS directory not found after 7z extraction")
         except Exception as e:
-            logger.warning("7z extraction method failed: {}, trying direct FFmpeg conversion", e)
-        
-        # Third try: Use direct FFmpeg conversion (final fallback)
-        try:
-            # Disk space is checked at the pipeline level
-            
-            # Get dynamic encoder settings
-            encoder = get_video_encoder()
-            preset = get_encoder_preset()
-            
-            cmd = [
-                "ffmpeg", "-y",
-                "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
-                "-probesize", "200M", "-analyzeduration", "200M",
-                "-fflags", "+genpts+igndts+ignidx",  # Generate timestamps, ignore DTS and index
-                "-err_detect", "ignore_err",  # Ignore errors and continue
-                "-max_error_rate", "1.0",  # Allow 100% errors (very aggressive)
-                "-threads", "1",  # Single thread to reduce noise
-                "-flags", "+low_delay",  # Low delay mode
-                "-i", source_path,
-                "-map", "0:v:0", "-map", "0:a:0?",
-                "-c:v", encoder, "-preset", preset, "-crf", "18",  # Dynamic encoder selection
-                "-vf", "bwdif=mode=1:parity=auto",  # Auto deinterlacing
-                "-c:a", "aac", "-b:a", "192k",  # AAC audio encoding
-                "-movflags", "+faststart",  # Web optimization
-                "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-                "-max_muxing_queue_size", "1024",  # Increase muxing queue
-                output_mp4,
-            ]
-            try:
-                run(cmd, capture_errors=True)
-            except subprocess.CalledProcessError as e:
-                logger.error("Direct FFmpeg conversion failed: {}", e)
-                raise
-            logger.info("Converted ISO to MP4 with re-encoding")
-            return
-        except Exception as e:
-            logger.error("All ISO extraction methods failed: {}", e)
+            logger.error("VOB processing failed: {}", e)
             raise
     elif "video_ts" in lower:
         # Read from VIDEO_TS folder; pick title 1
