@@ -115,7 +115,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 logger.info("Using VOB files directly from 7z extraction")
                 
                 # Find VOB files in the 7z-extracted VIDEO_TS directory
-                vob_files = [f for f in os.listdir(video_ts_path) if f.endswith('.vob')]
+                vob_files = [f for f in os.listdir(video_ts_path) if f.upper().endswith('.VOB')]
                 
                 if vob_files:
                     logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
