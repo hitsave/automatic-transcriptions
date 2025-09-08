@@ -11,6 +11,12 @@ def run(cmd: list[str]) -> None:
         subprocess.run(cmd, check=True, stderr=devnull)
 
 
+def run_vobcopy(cmd: list[str]) -> None:
+    logger.debug("Running vobcopy: {}", " ".join(cmd))
+    # Don't redirect stderr for vobcopy - it needs stderr for CSS key retrieval
+    subprocess.run(cmd, check=True)
+
+
 def check_disk_space(path: str, required_gb: int = 10) -> None:
     """Check if there's enough disk space available."""
     statvfs = os.statvfs(path)
@@ -38,8 +44,11 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
             # -f: force extraction even if vobcopy thinks there's not enough space (it's often wrong)
             vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", temp_dir, "-1", "-m", "-f"]
             logger.info("Running vobcopy command: {}", " ".join(vobcopy_cmd))
-            run(vobcopy_cmd)
-            logger.info("Vobcopy completed successfully")
+            import time
+            start_time = time.time()
+            run_vobcopy(vobcopy_cmd)
+            elapsed = time.time() - start_time
+            logger.info("Vobcopy completed successfully in {:.1f} seconds", elapsed)
             
             # Find all VOB files and process each as a separate video
             vob_files = [f for f in os.listdir(temp_dir) if f.endswith('.vob')]
@@ -50,6 +59,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                 
                 # Process each VOB file as a separate video
                 for i, vob_file in enumerate(vob_files):
+                    vob_start_time = time.time()
                     vob_path = os.path.join(temp_dir, vob_file)
                     
                     # Create separate output file for each VOB
@@ -63,6 +73,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     
                     logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
                     
+                    ffmpeg_start_time = time.time()
                     cmd = [
                         "ffmpeg", "-y",
                         "-hide_banner", "-loglevel", "quiet",  # Suppress all output
@@ -83,7 +94,10 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                         vob_output,
                     ]
                     run(cmd)
-                    logger.info("Successfully processed VOB file {} to {}", vob_file, os.path.basename(vob_output))
+                    ffmpeg_elapsed = time.time() - ffmpeg_start_time
+                    vob_elapsed = time.time() - vob_start_time
+                    logger.info("Successfully processed VOB file {} to {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
+                              vob_file, os.path.basename(vob_output), ffmpeg_elapsed, vob_elapsed)
                 
                 # If we created multiple files, we need to return the first one for the pipeline
                 # The pipeline will need to be updated to handle multiple outputs
