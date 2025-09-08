@@ -1,0 +1,16 @@
+services:
+  worker:
+    build: .
+    image: automatic-transcriptions:latest
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-YOUR_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-YOUR_SECRET_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      WASABI_SRC_BUCKET: ${WASABI_SRC_BUCKET:-your-source-bucket}
+      WASABI_DST_BUCKET: ${WASABI_DST_BUCKET:-your-destination-bucket}
+      WASABI_PREFIX: ${WASABI_PREFIX:-path/to/dumps/}
+      WASABI_OUTPUT_PREFIX: ${WASABI_OUTPUT_PREFIX:-processed/}
+    volumes:
+      - ./data:/data
+    command: ["process", "--help"]
+

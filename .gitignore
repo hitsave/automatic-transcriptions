@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+
+# Environments & tooling
+.env
+.venv/
+.vscode/
+.idea/
+
+# Data & artifacts
+data/
+
+# Docker Compose (keep local versions untracked)
+docker-compose.yml
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
