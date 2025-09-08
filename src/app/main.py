@@ -9,13 +9,13 @@ app = Typer(help="Automatic DVD/CD transcription and subtitle embedding pipeline
 @app.command()
 def process(
     src_bucket: str = Option(
-        ..., help="Wasabi source bucket for inputs", envvar="WASABI_SRC_BUCKET"
+        None, help="Wasabi source bucket for inputs", envvar="WASABI_SRC_BUCKET"
     ),
     prefix: str = Option(
         "", help="Prefix within source bucket to scan (ISO/VIDEO_TS)", envvar="WASABI_PREFIX"
     ),
     dst_bucket: str = Option(
-        ..., help="Wasabi destination bucket for outputs", envvar="WASABI_DST_BUCKET"
+        None, help="Wasabi destination bucket for outputs", envvar="WASABI_DST_BUCKET"
     ),
     output_prefix: str = Option(
         "", help="Output prefix in destination bucket", envvar="WASABI_OUTPUT_PREFIX"
@@ -28,6 +28,13 @@ def process(
     language: str = Option("auto", help="Source language or 'auto' for detection"),
     model_size: str = Option("medium", help="WhisperX model size"),
 ):
+    if not src_bucket:
+        logger.error("WASABI_SRC_BUCKET environment variable is required")
+        raise SystemExit(1)
+    if not dst_bucket:
+        logger.error("WASABI_DST_BUCKET environment variable is required")
+        raise SystemExit(1)
+    
     logger.info("Starting pipeline")
     run_pipeline(
         src_bucket=src_bucket,

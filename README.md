@@ -4,20 +4,10 @@ End-to-end pipeline to fetch DVD/CD dumps from Wasabi S3, extract video, transco
 
 ### Requirements
 - Docker and docker-compose
-- Wasabi S3 credentials (via `.env` or AWS profile)
+- Wasabi S3 credentials (via environment variables or AWS profile)
 
 ### Environment
-Create a `.env` file with:
-
-```
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-WASABI_SRC_BUCKET=your-source-bucket
-WASABI_DST_BUCKET=your-destination-bucket
-WASABI_PREFIX=path/to/dumps/
-WASABI_OUTPUT_PREFIX=processed/
-```
+Set your environment variables directly in `docker-compose.yml` or use the example file as a template.
 
 ### Build
 ```
@@ -34,15 +24,12 @@ Then edit `docker-compose.yml` locally with your real environment values. The `.
 ### Run
 Process all items under the prefix from source bucket and upload final MP4s with embedded English subtitles to destination bucket:
 ```
-docker compose run --rm worker process \
-  --src-bucket "$WASABI_SRC_BUCKET" \
-  --prefix "$WASABI_PREFIX" \
-  --dst-bucket "$WASABI_DST_BUCKET" \
-  --output-prefix "$WASABI_OUTPUT_PREFIX" \
-  --region "$AWS_REGION" \
-  --local-cache /data \
-  --language auto \
-  --model-size medium
+docker compose up
+```
+
+Or run a one-off job:
+```
+docker compose run --rm worker
 ```
 
 Data directories are mounted at `./data` on the host.
