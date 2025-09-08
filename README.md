@@ -23,20 +23,43 @@ Then edit `docker-compose.yml` locally with your real environment values. The `.
 
 ### Run
 Process all items under the prefix from source bucket and upload final MP4s with embedded English subtitles to destination bucket:
+
+**Normal run (processes and uploads):**
 ```
 docker compose up
 ```
 
-Or run a one-off job:
+**One-off job:**
 ```
 docker compose run --rm worker
 ```
 
+**Dry run (processes locally but doesn't upload):**
+```
+docker compose run --rm worker --dry-run
+```
+
+**Folder structure support:**
+- Processes folders like `E3_2004/`, `F_WAVE_026/`, etc.
+- Finds main media files (`.iso` or `VIDEO_TS.IFO`) within each folder
+- Preserves folder structure locally to avoid filename collisions
+- Skips metadata files (`.txt`, `.zip`, etc.)
+
 Data directories are mounted at `./data` on the host.
 
-### Notes
-- Transcoding uses libx264 CRF 18, preset slow, AAC 192k, faststart.
-- Deinterlacing uses `bwdif` with automatic parity detection; progressive sources pass through.
-- Subtitles are embedded as `mov_text` with `language=eng` and `default` disposition.
-- For ISO/VIDEO_TS inputs, we attempt title 1. For multi-title DVDs, enhance `extract_main_title_to_mkv` to choose longest program.
+### Features
+- **Resumable processing**: Tracks completed files to avoid reprocessing
+- **Smart downloads**: Skips re-downloading if file exists and is complete
+- **Folder structure support**: Handles organized S3 buckets with multiple DVD/CD folders
+- **Dry run mode**: Test processing without uploading to S3
+- **Automatic deinterlacing**: Uses `bwdif` with automatic parity detection
+- **Multi-language support**: Auto-detects language and translates to English
+- **Twitch-ready output**: MP4 with embedded English subtitles
+
+### Technical Details
+- **Transcoding**: libx264 CRF 18, preset slow, AAC 192k, faststart
+- **Deinterlacing**: `bwdif` with automatic parity detection; progressive sources pass through
+- **Subtitles**: Embedded as `mov_text` with `language=eng` and `default` disposition
+- **Processing**: Sequential (one file at a time) for memory efficiency
+- **Tracking**: JSON file at `/data/processed_files.json` records completed work
 

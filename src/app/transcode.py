@@ -8,18 +8,9 @@ def run(cmd: list[str]) -> None:
 
 
 def transcode_to_mp4_with_auto_deinterlace(input_path: str, output_path: str) -> None:
-    # ffmpeg filtergraph to auto-detect interlacing and apply yadif if interlaced
-    # Use bwdif as higher-quality alternative if available; yadif is fine too
-    filtergraph = (
-        "idet,split[a][b];"
-        "[a]yadif=deint=interlaced:parity=auto:mode=1[aout];"
-        "[b]fps=fps=30000/1001[bout];"
-        "[aout][bout]mergeplanes=0"
-    )
-
-    # However, mergeplanes trick is brittle. Prefer selective filter via 'bwdif=mode=auto:parity=auto' directly.
-    # Simpler: always run bwdif; it is low-cost and preserves progressive frames.
-    vf = "bwdif=mode=auto:parity=auto"
+    # Use bwdif for deinterlacing - it's low-cost and preserves progressive frames
+    # Fix the syntax: mode should be 0, 1, or 2, not "auto"
+    vf = "bwdif=mode=1:parity=auto"
 
     cmd = [
         "ffmpeg", "-y",

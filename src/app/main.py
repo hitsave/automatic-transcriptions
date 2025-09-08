@@ -28,6 +28,9 @@ def process(
     language: str = Option("auto", help="Source language or 'auto' for detection"),
     model_size: str = Option("medium", help="WhisperX model size"),
     dry_run: bool = Option(False, help="Dry run mode - process locally but don't upload to S3"),
+    skip_checksum: bool = Option(False, help="Skip checksum verification (use existing local files if present)"),
+    force_download: bool = Option(False, help="Force re-download of all files, even if they exist locally"),
+    skip_video_processing: bool = Option(False, help="Skip video processing if MP4 files already exist (transcription only)"),
 ):
     if not src_bucket:
         logger.error("WASABI_SRC_BUCKET environment variable is required")
@@ -52,6 +55,9 @@ def process(
         language=language,
         model_size=model_size,
         dry_run=dry_run,
+        skip_checksum=skip_checksum,
+        force_download=force_download,
+        skip_video_processing=skip_video_processing,
     )
 
 

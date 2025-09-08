@@ -30,6 +30,7 @@ class WasabiClient:
                 results.append(obj)
         return results
 
+
     def download_object(self, bucket: str, key: str, dest_dir: str) -> str:
         os.makedirs(dest_dir, exist_ok=True)
         filename = key.split("/")[-1] or "download"
