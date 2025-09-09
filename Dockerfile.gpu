@@ -13,6 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        p7zip-full \
        libdvd-pkg \
+       vobcopy \
     && dpkg-reconfigure libdvd-pkg \
     && apt-get dist-clean
 

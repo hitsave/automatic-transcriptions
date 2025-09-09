@@ -223,13 +223,25 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
             extract_cmd = ["7z", "x", source_path, "-o" + extract_dir, "VIDEO_TS"]
             run(extract_cmd)
             
-            # Use the VOB files directly from 7z extraction (no need for vobcopy)
+            # Use vobcopy to decrypt VOB files from the extracted VIDEO_TS
             video_ts_path = os.path.join(extract_dir, "VIDEO_TS")
             if os.path.exists(video_ts_path):
-                logger.info("Using VOB files directly from 7z extraction")
+                logger.info("Using vobcopy to decrypt VOB files from 7z extraction")
                 
-                # Find VOB files in the 7z-extracted VIDEO_TS directory
-                vob_files = [f for f in os.listdir(video_ts_path) if f.upper().endswith('.VOB')]
+                # Create vobcopy output directory
+                vobcopy_dir = "/data/work/temp_vobcopy"
+                if os.path.exists(vobcopy_dir):
+                    shutil.rmtree(vobcopy_dir, ignore_errors=True)
+                os.makedirs(vobcopy_dir, exist_ok=True)
+                
+                # Use vobcopy to decrypt the VOB files
+                vobcopy_cmd = ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m"]
+                logger.info("Running vobcopy to decrypt VOB files")
+                run(vobcopy_cmd)
+                
+                # Find decrypted VOB files
+                vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
+                video_ts_path = vobcopy_dir  # Use the decrypted VOB files
                 
                 if vob_files:
                     logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
@@ -281,11 +293,12 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                     
                     # Clean up
                     shutil.rmtree(extract_dir, ignore_errors=True)
-                    logger.info("Extracted using 7z method")
+                    shutil.rmtree(vobcopy_dir, ignore_errors=True)
+                    logger.info("Extracted using 7z + vobcopy method")
                     return
                 else:
-                    logger.error("No VOB files found after 7z extraction - this is not a valid DVD ISO")
-                    raise ValueError("No VOB files found in ISO - not a valid DVD structure")
+                    logger.error("No VOB files found after vobcopy decryption - this is not a valid DVD ISO")
+                    raise ValueError("No VOB files found after decryption - not a valid DVD structure")
             else:
                 logger.error("VIDEO_TS directory not found after 7z extraction - this is not a valid DVD ISO")
                 raise ValueError("VIDEO_TS directory not found in ISO - not a valid DVD structure")
