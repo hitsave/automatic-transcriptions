@@ -113,8 +113,9 @@ def is_gpu_available() -> bool:
             nvidia_smi_works = False
             logger.debug("nvidia-smi not available")
         
-        # GPU is available if any method succeeds
-        gpu_available = nvidia_device or (cuda_visible_devices and cuda_visible_devices != '') or nvidia_smi_works
+        # GPU is available if nvidia-smi works (primary method for WSL2/Docker)
+        # Device files may not be available in WSL2 even when GPU works
+        gpu_available = nvidia_smi_works or nvidia_device or (cuda_visible_devices and cuda_visible_devices != '')
         
         if not gpu_available:
             return False
@@ -129,6 +130,7 @@ def is_gpu_available() -> bool:
                 return False
                 
             # Test if NVENC actually works by trying to create a simple test
+            # In WSL2, device files may not be available but NVENC still works
             try:
                 test_cmd = [
                     'ffmpeg', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x240:rate=1',
@@ -139,6 +141,11 @@ def is_gpu_available() -> bool:
                 logger.debug("NVENC functionality test: {}", nvenc_works)
                 if not nvenc_works:
                     logger.debug("NVENC test stderr: {}", test_result.stderr)
+                    # In WSL2, if nvidia-smi works but NVENC test fails due to device access,
+                    # we should still allow GPU usage as the actual encoding might work
+                    if nvidia_smi_works and 'unsupported device' in test_result.stderr:
+                        logger.info("NVENC test failed due to device access in WSL2, but nvidia-smi works - allowing GPU usage")
+                        return True
                 return nvenc_works
             except subprocess.TimeoutExpired:
                 logger.warning("NVENC functionality test timed out")
