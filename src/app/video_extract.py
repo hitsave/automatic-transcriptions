@@ -222,12 +222,38 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
             os.makedirs(vobcopy_dir, exist_ok=True)
             
             # Use vobcopy to decrypt the VOB files directly from ISO
-            # Use -M for main title (longest) instead of -m for mirror (entire DVD)
-            # Use -F for faster processing, suppress verbose CSS key output
-            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-M", "-f", "-F", "4"]
-            logger.info("Running vobcopy to decrypt VOB files (this may take several minutes)")
-            # Suppress stderr to avoid verbose CSS key retrieval output
-            result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL)
+            # Try different vobcopy strategies for problematic DVDs
+            vobcopy_strategies = [
+                # Strategy 1: All titles with fast processing
+                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-a", "-f", "-F", "4"],
+                # Strategy 2: All titles without fast processing (more compatible)
+                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-a", "-f"],
+                # Strategy 3: Mirror mode (entire DVD) if all titles fails
+                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-m", "-f"],
+                # Strategy 4: Basic extraction without special flags
+                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-f"]
+            ]
+            
+            vobcopy_success = False
+            for i, vobcopy_cmd in enumerate(vobcopy_strategies, 1):
+                logger.info("Trying vobcopy strategy {}: {}", i, " ".join(vobcopy_cmd))
+                try:
+                    # Suppress stderr to avoid verbose CSS key retrieval output
+                    result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL)
+                    vobcopy_success = True
+                    logger.info("vobcopy strategy {} succeeded", i)
+                    break
+                except subprocess.CalledProcessError as e:
+                    logger.warning("vobcopy strategy {} failed with exit code {}: {}", i, e.returncode, e)
+                    # Clean up failed attempt
+                    if os.path.exists(vobcopy_dir):
+                        shutil.rmtree(vobcopy_dir, ignore_errors=True)
+                        os.makedirs(vobcopy_dir, exist_ok=True)
+                    continue
+            
+            if not vobcopy_success:
+                logger.error("All vobcopy strategies failed - this DVD may be corrupted or unsupported")
+                raise ValueError("vobcopy failed with all strategies - DVD may be corrupted or unsupported")
             
             # Find decrypted VOB files
             vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
