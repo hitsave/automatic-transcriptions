@@ -211,44 +211,30 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
     
     lower = source_path.lower()
     if lower.endswith(".iso"):
-        # Use 7z to extract VIDEO_TS from ISO, then process VOB files directly
+        # Use vobcopy directly on ISO file for decryption
         try:
-            # Extract VIDEO_TS from ISO using 7z
-            extract_dir = "/data/work/temp_extract"
-            if os.path.exists(extract_dir):
-                shutil.rmtree(extract_dir, ignore_errors=True)
-            os.makedirs(extract_dir, exist_ok=True)
+            logger.info("Using vobcopy to decrypt VOB files directly from ISO")
             
-            logger.info("Extracting VIDEO_TS from ISO using 7z")
-            extract_cmd = ["7z", "x", source_path, "-o" + extract_dir, "VIDEO_TS"]
-            run(extract_cmd)
+            # Create vobcopy output directory
+            vobcopy_dir = "/data/work/temp_vobcopy"
+            if os.path.exists(vobcopy_dir):
+                shutil.rmtree(vobcopy_dir, ignore_errors=True)
+            os.makedirs(vobcopy_dir, exist_ok=True)
             
-            # Use vobcopy to decrypt VOB files from the extracted VIDEO_TS
-            video_ts_path = os.path.join(extract_dir, "VIDEO_TS")
-            if os.path.exists(video_ts_path):
-                logger.info("Using vobcopy to decrypt VOB files from 7z extraction")
-                
-                # Create vobcopy output directory
-                vobcopy_dir = "/data/work/temp_vobcopy"
-                if os.path.exists(vobcopy_dir):
-                    shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                os.makedirs(vobcopy_dir, exist_ok=True)
-                
-                # Use vobcopy to decrypt the VOB files
-                # vobcopy expects the parent directory of VIDEO_TS, not VIDEO_TS itself
-                # Use -M for main title (longest) instead of -m for mirror (entire DVD)
-                # Use -v for verbose progress and -F for faster processing
-                vobcopy_cmd = ["vobcopy", "-i", extract_dir, "-o", vobcopy_dir, "-M", "-f", "-v", "-F", "4"]
-                logger.info("Running vobcopy to decrypt VOB files (this may take several minutes)")
-                # Don't suppress stderr for vobcopy so we can see progress
-                result = subprocess.run(vobcopy_cmd, check=True)
-                
-                # Find decrypted VOB files
-                vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
-                video_ts_path = vobcopy_dir  # Use the decrypted VOB files
+            # Use vobcopy to decrypt the VOB files directly from ISO
+            # Use -M for main title (longest) instead of -m for mirror (entire DVD)
+            # Use -v for verbose progress and -F for faster processing
+            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-M", "-f", "-v", "-F", "4"]
+            logger.info("Running vobcopy to decrypt VOB files (this may take several minutes)")
+            # Don't suppress stderr for vobcopy so we can see progress
+            result = subprocess.run(vobcopy_cmd, check=True)
+            
+            # Find decrypted VOB files
+            vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
+            video_ts_path = vobcopy_dir  # Use the decrypted VOB files
                 
                 if vob_files:
-                    logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
+                    logger.info("Found {} VOB files after vobcopy decryption: {}", len(vob_files), vob_files)
                     
                     # Get dynamic encoder settings
                     encoder = get_video_encoder(force_encoder)
@@ -296,21 +282,17 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                     logger.info("All {} VOB files processed in {:.1f}s (parallel processing)", len(vob_files), processing_elapsed)
                     
                     # Clean up
-                    shutil.rmtree(extract_dir, ignore_errors=True)
                     shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                    logger.info("Extracted using 7z + vobcopy method")
+                    logger.info("Extracted using vobcopy method")
                     return
                 else:
                     logger.error("No VOB files found after vobcopy decryption - this is not a valid DVD ISO")
                     raise ValueError("No VOB files found after decryption - not a valid DVD structure")
-            else:
-                logger.error("VIDEO_TS directory not found after 7z extraction - this is not a valid DVD ISO")
-                raise ValueError("VIDEO_TS directory not found in ISO - not a valid DVD structure")
         except Exception as e:
             logger.error("VOB processing failed: {}", e)
             raise
     else:
-        # Only ISO files are supported - use 7z extraction method
+        # Only ISO files are supported - use vobcopy method
         logger.error("Only ISO files are supported. Found: {}", source_path)
         raise ValueError(f"Unsupported file type: {source_path}. Only ISO files are supported.")
 

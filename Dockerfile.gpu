@@ -11,7 +11,6 @@ RUN apt-get update \
     && ln -s /usr/local/bin/ffmpeg /usr/bin/ffmpeg \
     && ln -s /usr/local/bin/ffprobe /usr/bin/ffprobe \
     && apt-get install -y --no-install-recommends \
-       p7zip-full \
        libdvd-pkg \
        vobcopy \
     && dpkg-reconfigure libdvd-pkg \
