@@ -236,7 +236,8 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                 
                 # Use vobcopy to decrypt the VOB files
                 # vobcopy expects the parent directory of VIDEO_TS, not VIDEO_TS itself
-                vobcopy_cmd = ["vobcopy", "-i", extract_dir, "-o", vobcopy_dir, "-m"]
+                # Use -M for main title (longest) instead of -m for mirror (entire DVD)
+                vobcopy_cmd = ["vobcopy", "-i", extract_dir, "-o", vobcopy_dir, "-M", "-f"]
                 logger.info("Running vobcopy to decrypt VOB files")
                 run(vobcopy_cmd)
                 
