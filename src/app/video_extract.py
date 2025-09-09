@@ -314,41 +314,17 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     logger.info("Extracted using 7z method")
                     return
                 else:
-                    logger.warning("No VOB files found after 7z extraction")
+                    logger.error("No VOB files found after 7z extraction - this is not a valid DVD ISO")
+                    raise ValueError("No VOB files found in ISO - not a valid DVD structure")
             else:
-                logger.warning("VIDEO_TS directory not found after 7z extraction")
+                logger.error("VIDEO_TS directory not found after 7z extraction - this is not a valid DVD ISO")
+                raise ValueError("VIDEO_TS directory not found in ISO - not a valid DVD structure")
         except Exception as e:
             logger.error("VOB processing failed: {}", e)
             raise
-    elif "video_ts" in lower:
-        # Read from VIDEO_TS folder; pick title 1
-        input_url = f"file:dvd://1:{os.path.dirname(source_path) if source_path.lower().endswith('video_ts.ifo') else source_path}"
-        cmd = [
-            "ffmpeg", "-y",
-            "-hide_banner", "-loglevel", "quiet",  # Suppress all output except fatal errors
-            "-probesize", "100M", "-analyzeduration", "100M",
-            "-fflags", "+genpts+igndts",  # Generate timestamps, ignore DTS
-            "-err_detect", "ignore_err",  # Ignore errors and continue
-            "-i", input_url,
-            "-map", "0:v:0", "-map", "0:a:0?",
-            "-c:v", "copy", "-c:a", "copy",
-            "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-            output_mkv,
-        ]
-        run(cmd)
     else:
-        # Already a file with video
-        cmd = [
-            "ffmpeg", "-y",
-            "-hide_banner", "-loglevel", "quiet",  # Suppress all output except fatal errors
-            "-fflags", "+genpts+igndts",  # Generate timestamps, ignore DTS
-            "-err_detect", "ignore_err",  # Ignore errors and continue
-            "-i", source_path,
-            "-map", "0:v:0", "-map", "0:a:0?",
-            "-c:v", "copy", "-c:a", "copy",
-            "-avoid_negative_ts", "make_zero",  # Handle negative timestamps
-            output_mkv,
-        ]
-        run(cmd)
+        # Only ISO files are supported - use 7z extraction method
+        logger.error("Only ISO files are supported. Found: {}", source_path)
+        raise ValueError(f"Unsupported file type: {source_path}. Only ISO files are supported.")
 
 
