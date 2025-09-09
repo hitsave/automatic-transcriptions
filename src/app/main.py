@@ -31,8 +31,7 @@ def process(
     skip_checksum: bool = Option(False, help="Skip checksum verification (use existing local files if present)"),
     force_download: bool = Option(False, help="Force re-download of all files, even if they exist locally"),
     skip_video_processing: bool = Option(False, help="Skip video processing if MP4 files already exist (transcription only)"),
-    gpu: bool = Option(False, help="Force GPU encoding (h264_nvenc)"),
-    cpu: bool = Option(False, help="Force CPU encoding (libx264)"),
+    analyze_menu: bool = Option(False, help="Analyze DVD menu to extract publisher information and improve title naming"),
 ):
     if not src_bucket:
         logger.error("WASABI_SRC_BUCKET environment variable is required")
@@ -41,21 +40,8 @@ def process(
         logger.error("WASABI_DST_BUCKET environment variable is required")
         raise SystemExit(1)
     
-    # Validate encoder flags
-    if gpu and cpu:
-        logger.error("Cannot specify both --gpu and --cpu flags")
-        raise SystemExit(1)
-    
-    # Determine encoder preference
-    force_encoder = None
-    if gpu:
-        force_encoder = "gpu"
-        logger.info("Forcing GPU encoding (h264_nvenc)")
-    elif cpu:
-        force_encoder = "cpu"
-        logger.info("Forcing CPU encoding (libx264)")
-    else:
-        logger.info("Using automatic encoder detection")
+    # Using CPU encoding (libx264)
+    logger.info("Using CPU encoding (libx264)")
     
     if dry_run:
         logger.info("Starting pipeline in DRY RUN mode - no uploads will be performed")
@@ -76,7 +62,7 @@ def process(
         skip_checksum=skip_checksum,
         force_download=force_download,
         skip_video_processing=skip_video_processing,
-        force_encoder=force_encoder,
+        analyze_menu=analyze_menu,
     )
 
 

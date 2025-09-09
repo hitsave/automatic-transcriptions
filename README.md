@@ -5,21 +5,14 @@ End-to-end pipeline to fetch DVD/CD dumps from Wasabi S3, extract video, transco
 ### Requirements
 - Docker and docker-compose
 - Wasabi S3 credentials (via environment variables or AWS profile)
-- **For GPU acceleration**: NVIDIA GPU with CUDA support + nvidia-docker2
 
 ### Environment
 Set your environment variables directly in `docker-compose.yml` or use the example file as a template.
 
 ### Build
 
-**CPU-only setup (compatible with any machine):**
 ```
 docker compose build
-```
-
-**GPU-accelerated setup (requires NVIDIA GPU):**
-```
-docker compose -f docker-compose.gpu.yml build
 ```
 
 ### Compose files
@@ -32,7 +25,6 @@ Then edit `docker-compose.yml` locally with your real environment values. The `.
 ### Run
 Process all items under the prefix from source bucket and upload final MP4s with embedded English subtitles to destination bucket:
 
-**CPU-only setup:**
 ```bash
 # Normal run (processes and uploads)
 docker compose up
@@ -42,18 +34,6 @@ docker compose run --rm worker
 
 # Dry run (processes locally but doesn't upload)
 docker compose run --rm worker --dry-run
-```
-
-**GPU-accelerated setup (10-20x faster encoding):**
-```bash
-# Normal run (processes and uploads)
-docker compose -f docker-compose.gpu.yml up
-
-# One-off job
-docker compose -f docker-compose.gpu.yml run --rm worker
-
-# Dry run (processes locally but doesn't upload)
-docker compose -f docker-compose.gpu.yml run --rm worker --dry-run
 ```
 
 **Folder structure support:**
@@ -74,10 +54,7 @@ Data directories are mounted at `./data` on the host.
 - **Twitch-ready output**: MP4 with embedded English subtitles
 
 ### Technical Details
-- **Transcoding**: 
-  - **CPU**: libx264 CRF 18, preset slow, AAC 192k, faststart
-  - **GPU**: h264_nvenc CRF 18, preset p7, AAC 192k, faststart (10-20x faster)
-- **GPU Detection**: Automatically detects NVIDIA GPU and uses NVENC encoder
+- **Transcoding**: libx264 CRF 18, preset slow, AAC 192k, faststart
 - **Deinterlacing**: `bwdif` with automatic parity detection; progressive sources pass through
 - **Subtitles**: Embedded as `mov_text` with `language=eng` and `default` disposition
 - **Processing**: Sequential (one file at a time) for memory efficiency

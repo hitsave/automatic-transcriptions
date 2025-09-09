@@ -1,14 +1,23 @@
 FROM python:3.11-slim
 
-# System deps: ffmpeg for transcode, p7zip for ISO extraction, libdvd-pkg for DVD copy protection
+# System deps: ffmpeg for transcode, libdvd-pkg for DVD copy protection, tools for IFO parsing
 RUN echo "deb http://deb.debian.org/debian trixie main contrib non-free" > /etc/apt/sources.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        ffmpeg \
-       p7zip-full \
        libdvd-pkg \
+       tesseract-ocr \
+       tesseract-ocr-jpn \
+       tesseract-ocr-eng \
        ca-certificates \
        tzdata \
+       libdvdread-dev \
+       libdvdnav-dev \
+       lsdvd \
+       python3-opencv \
+       python3-numpy \
+       python3-pil \
+       p7zip-full \
     && dpkg-reconfigure libdvd-pkg \
     && apt-get dist-clean
 
