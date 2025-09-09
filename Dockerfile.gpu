@@ -1,6 +1,6 @@
 FROM nvidia/cuda:13.0.0-devel-ubuntu24.04
 
-# System deps: ffmpeg with NVENC, p7zip for ISO extraction, libdvd-pkg for DVD copy protection
+# System deps: ffmpeg with NVENC and libdvdcss, p7zip for ISO extraction
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        wget \
@@ -13,7 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        p7zip-full \
        libdvd-pkg \
-       vobcopy \
+       binutils \
     && dpkg-reconfigure libdvd-pkg \
     && apt-get dist-clean
 

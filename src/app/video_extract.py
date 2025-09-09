@@ -2,7 +2,6 @@ import os
 import subprocess
 import shutil
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
 
@@ -22,95 +21,6 @@ def run(cmd: list[str], capture_errors: bool = False) -> subprocess.CompletedPro
         with open('/dev/null', 'w') as devnull:
             result = subprocess.run(cmd, check=True, stderr=devnull)
         return result
-
-
-def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str, preset: str) -> tuple[str, float, float]:
-    """Process a single VOB file and return timing information."""
-    vob_start_time = time.time()
-    logger.info("Processing VOB file {} as {}", vob_file, os.path.basename(vob_output))
-    
-    ffmpeg_start_time = time.time()
-    # First, check if the VOB file has video streams
-    probe_cmd = [
-        "ffprobe", "-v", "quiet", "-select_streams", "v:0", "-show_entries", "stream=codec_type",
-        "-of", "csv=p=0", vob_path
-    ]
-    try:
-        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
-        has_video = probe_result.returncode == 0 and "video" in probe_result.stdout
-        if not has_video:
-            logger.warning("VOB file {} has no video streams, skipping", vob_file)
-            return vob_file, 0.0, 0.0
-    except Exception as e:
-        logger.warning("Could not probe VOB file {}: {}", vob_file, e)
-        return vob_file, 0.0, 0.0
-
-    # Build command with encoder-specific parameters
-    cmd = [
-        "ffmpeg", "-y",
-        "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
-        "-probesize", "200M", "-analyzeduration", "200M",
-        "-fflags", "+genpts+igndts+ignidx",
-        "-err_detect", "ignore_err",
-        "-max_error_rate", "1.0",
-        "-threads", "0",  # Use all available threads for this VOB
-        "-flags", "+low_delay",
-        "-i", vob_path,
-        "-map", "0:v:0", "-map", "0:a:0?",
-        "-c:v", encoder, "-preset", preset,
-        "-r", "29.97",  # Force frame rate for DVD content
-    ]
-    
-    # Add encoder-specific quality settings
-    if encoder == "h264_nvenc":
-        # NVENC uses bitrate, not CRF - use more conservative settings for RTX 4090
-        cmd.extend(["-b:v", "4M", "-maxrate", "6M", "-bufsize", "8M", "-rc", "vbr"])
-    else:
-        # CPU encoders use CRF
-        cmd.extend(["-crf", "18"])
-    
-    cmd.extend([
-        "-vf", "yadif=1:1:0",  # Better deinterlacing for DVD content
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        "-avoid_negative_ts", "make_zero",
-        "-max_muxing_queue_size", "1024",
-        vob_output,
-    ])
-    result = run(cmd, capture_errors=True)
-    
-    # Check if the command failed
-    if result.returncode != 0:
-        # If NVENC fails, try with CPU encoder as fallback
-        if encoder == "h264_nvenc" and ("unsupported device" in result.stderr or "No capable devices found" in result.stderr or "Error while opening encoder" in result.stderr or "CUDA_ERROR_NO_DEVICE" in result.stderr):
-            logger.warning("NVENC failed for {}, falling back to CPU encoder", vob_file)
-            cpu_cmd = cmd.copy()
-            cpu_cmd[cpu_cmd.index("h264_nvenc")] = "libx264"
-            cpu_cmd[cpu_cmd.index("p7")] = "slow"
-            # Replace NVENC bitrate parameters with CRF for CPU encoder
-            if "-b:v" in cpu_cmd:
-                bv_index = cpu_cmd.index("-b:v")
-                # Remove bitrate, maxrate, bufsize, and rc parameters
-                cpu_cmd = cpu_cmd[:bv_index] + ["-crf", "18"] + cpu_cmd[bv_index+8:]
-            
-            cpu_result = run(cpu_cmd, capture_errors=True)
-            if cpu_result.returncode != 0:
-                logger.error("Both NVENC and CPU encoding failed for {}: {}", vob_file, cpu_result.stderr)
-                raise subprocess.CalledProcessError(cpu_result.returncode, cpu_cmd, cpu_result.stdout, cpu_result.stderr)
-            else:
-                logger.info("Successfully processed {} with CPU fallback", vob_file)
-        else:
-            logger.error("Failed to process VOB file {}: {}", vob_file, result.stderr)
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
-    
-    ffmpeg_elapsed = time.time() - ffmpeg_start_time
-    vob_elapsed = time.time() - vob_start_time
-    logger.info("Successfully processed VOB file {} to {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
-              vob_file, os.path.basename(vob_output), ffmpeg_elapsed, vob_elapsed)
-    
-    return vob_file, ffmpeg_elapsed, vob_elapsed
-
-
 
 
 def is_gpu_available() -> bool:
@@ -211,18 +121,11 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
     
     lower = source_path.lower()
     if lower.endswith(".iso"):
-        # Use vobcopy directly on ISO file for decryption
+        # Use FFmpeg with libdvdcss for direct DVD processing
         try:
-            logger.info("Using vobcopy to decrypt VOB files directly from ISO")
+            logger.info("Using FFmpeg with libdvdcss for direct DVD processing from ISO")
             
-            # Create vobcopy output directory
-            vobcopy_dir = "/data/work/temp_vobcopy"
-            if os.path.exists(vobcopy_dir):
-                shutil.rmtree(vobcopy_dir, ignore_errors=True)
-            os.makedirs(vobcopy_dir, exist_ok=True)
-            
-            # Use 7z extraction first, then vobcopy for complete DVD decryption
-            # This approach gets all titles and handles complex DVD structures better
+            # Extract VIDEO_TS directory from ISO for FFmpeg processing
             extract_dir = "/data/work/temp_extract"
             if os.path.exists(extract_dir):
                 shutil.rmtree(extract_dir, ignore_errors=True)
@@ -240,125 +143,116 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                     logger.error("VIDEO_TS directory not found after 7z extraction")
                     raise ValueError("VIDEO_TS directory not found in ISO")
                 
-                # Step 2: Use vobcopy to decrypt the extracted VOB files
-                logger.info("Using vobcopy to decrypt extracted VOB files")
-                
-                vobcopy_strategies = [
-                    # Strategy 1: Mirror mode (entire DVD) with fast processing
-                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m", "-f", "-F4"],
-                    # Strategy 2: Mirror mode (entire DVD) without fast processing
-                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m", "-f"],
-                    # Strategy 3: Main title (longest) with fast processing
-                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-M", "-f", "-F4"],
-                    # Strategy 4: Main title (longest) without fast processing
-                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-M", "-f"],
-                    # Strategy 5: Basic extraction without special flags
-                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-f"]
-                ]
-                
-                vobcopy_success = False
-                for i, vobcopy_cmd in enumerate(vobcopy_strategies, 1):
-                    logger.info("Trying vobcopy strategy {}: {}", i, " ".join(vobcopy_cmd))
-                    try:
-                        # For the first strategy, show progress and use longer timeout
-                        if i == 1:
-                            logger.info("Mirror strategy - showing progress and using timeout")
-                            result = subprocess.run(vobcopy_cmd, check=True, timeout=600)  # 10 minute timeout for CSS decryption
-                        else:
-                            # Suppress stderr for other strategies to avoid verbose output
-                            result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL, timeout=60)  # 1 minute timeout
-                        
-                        vobcopy_success = True
-                        logger.info("vobcopy strategy {} succeeded", i)
-                        break
-                    except subprocess.CalledProcessError as e:
-                        logger.warning("vobcopy strategy {} failed with exit code {}: {}", i, e.returncode, e)
-                        # Clean up failed attempt
-                        if os.path.exists(vobcopy_dir):
-                            shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                            os.makedirs(vobcopy_dir, exist_ok=True)
-                        continue
-                    except subprocess.TimeoutExpired:
-                        logger.warning("vobcopy strategy {} timed out", i)
-                        # Clean up failed attempt
-                        if os.path.exists(vobcopy_dir):
-                            shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                            os.makedirs(vobcopy_dir, exist_ok=True)
-                        continue
-                
-                if not vobcopy_success:
-                    logger.error("All vobcopy strategies failed - DVD may be corrupted or unsupported")
-                    raise ValueError("All vobcopy strategies failed - DVD may be corrupted or unsupported")
+                # Step 2: Extract DVD title for better naming
+                dvd_title = None
+                try:
+                    # Method 1: Try to get title from VIDEO_TS.IFO file
+                    ifo_file = os.path.join(video_ts_path, "VIDEO_TS.IFO")
+                    if os.path.exists(ifo_file):
+                        logger.info("Attempting to extract DVD title from VIDEO_TS.IFO")
+                        try:
+                            # Use strings command to extract readable text from IFO file
+                            result = subprocess.run(["strings", ifo_file], capture_output=True, text=True, timeout=30)
+                            if result.returncode == 0:
+                                # Look for common DVD title patterns in the strings output
+                                lines = result.stdout.split('\n')
+                                for line in lines:
+                                    line = line.strip()
+                                    # Look for lines that might be DVD titles (reasonable length, no special chars)
+                                    if 3 <= len(line) <= 50 and line.isprintable() and not line.isdigit():
+                                        # Skip common IFO file strings that aren't titles
+                                        if not any(skip in line.lower() for skip in ['video_ts', 'ifo', 'vob', 'menu', 'chapter', 'title', 'angle']):
+                                            dvd_title = line
+                                            logger.info("Found DVD title from IFO: {}", dvd_title)
+                                            break
+                        except Exception as e:
+                            logger.debug("Failed to extract title from IFO: {}", e)
                     
-            finally:
-                # Clean up extraction directory
-                if os.path.exists(extract_dir):
-                    shutil.rmtree(extract_dir, ignore_errors=True)
-            
-            # Find decrypted VOB files
-            vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
-            video_ts_path = vobcopy_dir  # Use the decrypted VOB files
-            
-            if vob_files:
-                logger.info("Found {} VOB files after vobcopy decryption: {}", len(vob_files), vob_files)
+                    # Method 2: Fallback to ISO filename if IFO method fails
+                    if not dvd_title:
+                        dvd_title = os.path.splitext(os.path.basename(source_path))[0]
+                        logger.info("Using ISO filename as DVD title: {}", dvd_title)
+                        
+                except Exception as e:
+                    logger.warning("Failed to extract DVD title: {}, using ISO filename", e)
+                    dvd_title = os.path.splitext(os.path.basename(source_path))[0]
+                
+                # Step 3: Use FFmpeg with libdvdcss for direct DVD processing
+                logger.info("Using FFmpeg with libdvdcss for direct DVD processing")
                 
                 # Get dynamic encoder settings
                 encoder = get_video_encoder(force_encoder)
                 preset = get_encoder_preset(force_encoder)
                 
-                # Prepare VOB processing tasks
-                vob_files.sort()
+                # Build FFmpeg command for DVD processing
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-hide_banner", "-loglevel", "error",
+                    "-dvdnav", "1",  # Enable DVD navigation
+                    "-i", f"dvd://{video_ts_path}",  # Use dvd:// protocol with VIDEO_TS path
+                    "-map", "0:v:0", "-map", "0:a:0?",  # Map first video and audio streams
+                    "-c:v", encoder, "-preset", preset,
+                    "-r", "29.97",  # Force frame rate for DVD content
+                ]
+                
+                # Add encoder-specific quality settings
+                if encoder == "h264_nvenc":
+                    # NVENC uses bitrate, not CRF - use more conservative settings for RTX 4090
+                    cmd.extend(["-b:v", "8M", "-maxrate", "10M", "-bufsize", "16M", "-rc", "vbr"])
+                else:
+                    # CPU encoders use CRF
+                    cmd.extend(["-crf", "18"])
+                
+                cmd.extend([
+                    "-vf", "yadif=1:1:0",  # Better deinterlacing for DVD content
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-movflags", "+faststart",
+                    "-avoid_negative_ts", "make_zero",
+                    "-max_muxing_queue_size", "1024",
+                    output_mp4,
+                ])
+                
+                # Run FFmpeg command
+                logger.info("Running FFmpeg DVD processing command")
                 processing_start_time = time.time()
+                result = run(cmd, capture_errors=True)
                 
-                # Determine optimal thread count (use CPU cores, but limit to avoid overwhelming)
-                import multiprocessing
-                max_workers = min(len(vob_files), multiprocessing.cpu_count(), 8)  # Cap at 8 to avoid overwhelming
-                logger.info("Processing {} VOB files using {} parallel workers", len(vob_files), max_workers)
-                
-                # Process VOB files in parallel
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                    # Submit all VOB processing tasks
-                    future_to_vob = {}
-                    for i, vob_file in enumerate(vob_files):
-                        vob_path = os.path.join(video_ts_path, vob_file)
+                if result.returncode != 0:
+                    # If NVENC fails, try with CPU encoder as fallback
+                    if encoder == "h264_nvenc" and ("unsupported device" in result.stderr or "No capable devices found" in result.stderr or "Error while opening encoder" in result.stderr or "CUDA_ERROR_NO_DEVICE" in result.stderr):
+                        logger.warning("NVENC failed, falling back to CPU encoder")
+                        cpu_cmd = cmd.copy()
+                        cpu_cmd[cpu_cmd.index("h264_nvenc")] = "libx264"
+                        cpu_cmd[cpu_cmd.index("p7")] = "slow"
+                        # Replace NVENC bitrate parameters with CRF for CPU encoder
+                        if "-b:v" in cpu_cmd:
+                            bv_index = cpu_cmd.index("-b:v")
+                            # Remove bitrate, maxrate, bufsize, and rc parameters
+                            cpu_cmd = cpu_cmd[:bv_index] + ["-crf", "18"] + cpu_cmd[bv_index+8:]
                         
-                        if len(vob_files) == 1:
-                            vob_output = output_mp4
+                        cpu_result = run(cpu_cmd, capture_errors=True)
+                        if cpu_result.returncode != 0:
+                            logger.error("Both NVENC and CPU encoding failed: {}", cpu_result.stderr)
+                            raise subprocess.CalledProcessError(cpu_result.returncode, cpu_cmd, cpu_result.stdout, cpu_result.stderr)
                         else:
-                            base_name = os.path.splitext(output_mp4)[0]
-                            vob_output = f"{base_name}_part{i+1}.mp4"
-                        
-                        future = executor.submit(process_vob_file, vob_path, vob_output, vob_file, encoder, preset)
-                        future_to_vob[future] = vob_file
-                    
-                    # Wait for all tasks to complete
-                    completed_count = 0
-                    for future in as_completed(future_to_vob):
-                        vob_file = future_to_vob[future]
-                        try:
-                            processed_file, ffmpeg_elapsed, vob_elapsed = future.result()
-                            completed_count += 1
-                            logger.info("Completed {}/{} VOB files: {} (FFmpeg: {:.1f}s, Total: {:.1f}s)", 
-                                      completed_count, len(vob_files), processed_file, ffmpeg_elapsed, vob_elapsed)
-                        except Exception as e:
-                            logger.error("Failed to process VOB file {}: {}", vob_file, e)
-                            raise
+                            logger.info("Successfully processed with CPU fallback")
+                    else:
+                        logger.error("FFmpeg DVD processing failed: {}", result.stderr)
+                        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
                 
                 processing_elapsed = time.time() - processing_start_time
-                logger.info("All {} VOB files processed in {:.1f}s (parallel processing)", len(vob_files), processing_elapsed)
+                logger.info("DVD processing completed in {:.1f}s using FFmpeg with libdvdcss", processing_elapsed)
                 
-                # Clean up
-                shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                logger.info("Extracted using vobcopy method")
-                return
-            else:
-                logger.error("No VOB files found after vobcopy decryption - this is not a valid DVD ISO")
-                raise ValueError("No VOB files found after decryption - not a valid DVD structure")
+            finally:
+                # Clean up extraction directory
+                if os.path.exists(extract_dir):
+                    shutil.rmtree(extract_dir, ignore_errors=True)
+                    
         except Exception as e:
-            logger.error("VOB processing failed: {}", e)
+            logger.error("FFmpeg DVD processing failed: {}", e)
             raise
     else:
-        # Only ISO files are supported - use vobcopy method
+        # Only ISO files are supported
         logger.error("Only ISO files are supported. Found: {}", source_path)
         raise ValueError(f"Unsupported file type: {source_path}. Only ISO files are supported.")
 
