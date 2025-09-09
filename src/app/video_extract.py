@@ -58,6 +58,7 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         "-i", vob_path,
         "-map", "0:v:0", "-map", "0:a:0?",
         "-c:v", encoder, "-preset", preset,
+        "-r", "29.97",  # Force frame rate for DVD content
     ]
     
     # Add encoder-specific quality settings
@@ -69,7 +70,7 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         cmd.extend(["-crf", "18"])
     
     cmd.extend([
-        "-vf", "bwdif=mode=1:parity=auto",
+        "-vf", "yadif=1:1:0",  # Better deinterlacing for DVD content
         "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart",
         "-avoid_negative_ts", "make_zero",
