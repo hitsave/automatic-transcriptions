@@ -212,6 +212,7 @@ def run_pipeline(
     skip_checksum: bool = False,
     force_download: bool = False,
     skip_video_processing: bool = False,
+    force_encoder: str | None = None,
 ) -> None:
     work_root = os.path.join(local_cache, "work")
     incoming_root = os.path.join(local_cache, "incoming")
@@ -332,7 +333,7 @@ def run_pipeline(
             
             try:
                 logger.info("Extracting and converting main title from {} to {}", local_path, mp4_path)
-                extract_main_title_to_mp4(local_path, mp4_path)
+                extract_main_title_to_mp4(local_path, mp4_path, force_encoder)
                 logger.info("Successfully extracted and converted main title")
             except Exception as e:
                 # All extraction failures are fatal - stop the pipeline

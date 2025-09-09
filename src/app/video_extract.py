@@ -152,8 +152,17 @@ def is_gpu_available() -> bool:
 # Cache GPU detection result to avoid repeated checks
 _gpu_available_cache = None
 
-def get_video_encoder() -> str:
+def get_video_encoder(force_encoder: str | None = None) -> str:
     """Get the best available video encoder (GPU or CPU)."""
+    # If force_encoder is specified, use it
+    if force_encoder == "gpu":
+        logger.info("Forcing GPU encoder (h264_nvenc)")
+        return "h264_nvenc"
+    elif force_encoder == "cpu":
+        logger.info("Forcing CPU encoder (libx264)")
+        return "libx264"
+    
+    # Otherwise, use automatic detection
     global _gpu_available_cache
     if _gpu_available_cache is None:
         _gpu_available_cache = is_gpu_available()
@@ -167,8 +176,15 @@ def get_video_encoder() -> str:
         return "libx264"
 
 
-def get_encoder_preset() -> str:
+def get_encoder_preset(force_encoder: str | None = None) -> str:
     """Get the appropriate preset for the selected encoder."""
+    # If force_encoder is specified, use appropriate preset
+    if force_encoder == "gpu":
+        return "p7"  # NVENC preset (p7 = high quality, slowest)
+    elif force_encoder == "cpu":
+        return "slow"  # x264 preset
+    
+    # Otherwise, use automatic detection
     global _gpu_available_cache
     if _gpu_available_cache is None:
         _gpu_available_cache = is_gpu_available()
@@ -190,7 +206,7 @@ def check_disk_space(path: str, required_gb: int = 10) -> None:
     logger.debug("Disk space check passed: {:.1f}GB available", free_gb)
 
 
-def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
+def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: str | None = None) -> None:
     os.makedirs(os.path.dirname(output_mp4), exist_ok=True)
     
     lower = source_path.lower()
@@ -219,8 +235,8 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
                     logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
                     
                     # Get dynamic encoder settings
-                    encoder = get_video_encoder()
-                    preset = get_encoder_preset()
+                    encoder = get_video_encoder(force_encoder)
+                    preset = get_encoder_preset(force_encoder)
                     
                     # Prepare VOB processing tasks
                     vob_files.sort()
