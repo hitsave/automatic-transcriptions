@@ -84,9 +84,14 @@ def is_gpu_available() -> bool:
         # Check multiple ways to detect GPU availability
         gpu_available = False
         
-        # Method 1: Check for NVIDIA device files
+        # Method 1: Check for NVIDIA device files (may not exist in WSL2)
         nvidia_device = os.path.exists('/dev/nvidia0')
         logger.debug("NVIDIA device /dev/nvidia0 exists: {}", nvidia_device)
+        
+        # Check if we're in WSL2 (device files may be virtualized)
+        is_wsl2 = os.path.exists('/proc/version') and 'Microsoft' in open('/proc/version').read()
+        if is_wsl2:
+            logger.debug("Running in WSL2 - device files may be virtualized")
         
         # Method 2: Check for CUDA_VISIBLE_DEVICES environment variable
         cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
@@ -114,8 +119,15 @@ def is_gpu_available() -> bool:
             logger.debug("nvidia-smi not available")
         
         # GPU is available if nvidia-smi works (primary method for WSL2/Docker)
-        # Device files may not be available in WSL2 even when GPU works
-        gpu_available = nvidia_smi_works or nvidia_device or (cuda_visible_devices and cuda_visible_devices != '')
+        # In WSL2, device files are virtualized but nvidia-smi still works
+        if is_wsl2:
+            # In WSL2, prioritize nvidia-smi over device files
+            gpu_available = nvidia_smi_works or (cuda_visible_devices and cuda_visible_devices != '')
+            if nvidia_smi_works and not nvidia_device:
+                logger.info("WSL2 detected: Using nvidia-smi for GPU detection (device files virtualized)")
+        else:
+            # On native Linux, use all methods
+            gpu_available = nvidia_smi_works or nvidia_device or (cuda_visible_devices and cuda_visible_devices != '')
         
         if not gpu_available:
             return False
@@ -143,8 +155,8 @@ def is_gpu_available() -> bool:
                     logger.debug("NVENC test stderr: {}", test_result.stderr)
                     # In WSL2, if nvidia-smi works but NVENC test fails due to device access,
                     # we should still allow GPU usage as the actual encoding might work
-                    if nvidia_smi_works and 'unsupported device' in test_result.stderr:
-                        logger.info("NVENC test failed due to device access in WSL2, but nvidia-smi works - allowing GPU usage")
+                    if is_wsl2 and nvidia_smi_works and ('unsupported device' in test_result.stderr or 'No capable devices found' in test_result.stderr):
+                        logger.info("WSL2: NVENC test failed due to virtualized device access, but nvidia-smi works - allowing GPU usage")
                         return True
                 return nvenc_works
             except subprocess.TimeoutExpired:
