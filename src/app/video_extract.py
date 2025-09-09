@@ -221,81 +221,78 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                 shutil.rmtree(vobcopy_dir, ignore_errors=True)
             os.makedirs(vobcopy_dir, exist_ok=True)
             
-            # Use vobcopy to decrypt the VOB files directly from ISO
-            # Try different vobcopy strategies for problematic DVDs
-            vobcopy_strategies = [
-                # Strategy 1: All titles with fast processing
-                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-a", "-f", "-F", "4"],
-                # Strategy 2: All titles without fast processing (more compatible)
-                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-a", "-f"],
-                # Strategy 3: Mirror mode (entire DVD) if all titles fails
-                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-m", "-f"],
-                # Strategy 4: Basic extraction without special flags
-                ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-f"]
-            ]
+            # Use 7z extraction first, then vobcopy for complete DVD decryption
+            # This approach gets all titles and handles complex DVD structures better
+            extract_dir = "/data/work/temp_extract"
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir, ignore_errors=True)
+            os.makedirs(extract_dir, exist_ok=True)
             
-            vobcopy_success = False
-            for i, vobcopy_cmd in enumerate(vobcopy_strategies, 1):
-                logger.info("Trying vobcopy strategy {}: {}", i, " ".join(vobcopy_cmd))
-                try:
-                    # For the last strategy, don't suppress stderr so we can see progress
-                    # and add a timeout to prevent hanging
-                    if i == len(vobcopy_strategies):
-                        logger.info("Last strategy - showing progress and using timeout")
-                        result = subprocess.run(vobcopy_cmd, check=True, timeout=600)  # 10 minute timeout
-                    else:
-                        # Suppress stderr for earlier strategies to avoid verbose output
-                        result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL, timeout=60)  # 1 minute timeout
-                    
-                    vobcopy_success = True
-                    logger.info("vobcopy strategy {} succeeded", i)
-                    break
-                except subprocess.CalledProcessError as e:
-                    logger.warning("vobcopy strategy {} failed with exit code {}: {}", i, e.returncode, e)
-                    # Clean up failed attempt
-                    if os.path.exists(vobcopy_dir):
-                        shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                        os.makedirs(vobcopy_dir, exist_ok=True)
-                    continue
-                except subprocess.TimeoutExpired:
-                    logger.warning("vobcopy strategy {} timed out", i)
-                    # Clean up failed attempt
-                    if os.path.exists(vobcopy_dir):
-                        shutil.rmtree(vobcopy_dir, ignore_errors=True)
-                        os.makedirs(vobcopy_dir, exist_ok=True)
-                    continue
-            
-            if not vobcopy_success:
-                logger.warning("All vobcopy strategies failed - falling back to 7z extraction")
-                # Fallback to 7z extraction method
-                try:
-                    # Extract VIDEO_TS from ISO using 7z
-                    extract_dir = "/data/work/temp_extract"
-                    if os.path.exists(extract_dir):
-                        shutil.rmtree(extract_dir, ignore_errors=True)
-                    os.makedirs(extract_dir, exist_ok=True)
-                    
-                    logger.info("Extracting VIDEO_TS from ISO using 7z as fallback")
-                    extract_cmd = ["7z", "x", source_path, "-o" + extract_dir, "VIDEO_TS"]
-                    run(extract_cmd)
-                    
-                    # Check if extraction worked
-                    video_ts_path = os.path.join(extract_dir, "VIDEO_TS")
-                    if os.path.exists(video_ts_path):
-                        logger.info("7z extraction successful, using extracted VOB files")
-                        vob_files = [f for f in os.listdir(video_ts_path) if f.upper().endswith('.VOB')]
-                        if vob_files:
-                            logger.info("Found {} VOB files after 7z extraction: {}", len(vob_files), vob_files)
-                            # Continue with normal processing using extracted VOB files
+            try:
+                # Step 1: Extract VIDEO_TS from ISO using 7z
+                logger.info("Extracting VIDEO_TS from ISO using 7z")
+                extract_cmd = ["7z", "x", source_path, "-o" + extract_dir, "VIDEO_TS"]
+                run(extract_cmd)
+                
+                # Check if extraction worked
+                video_ts_path = os.path.join(extract_dir, "VIDEO_TS")
+                if not os.path.exists(video_ts_path):
+                    logger.error("VIDEO_TS directory not found after 7z extraction")
+                    raise ValueError("VIDEO_TS directory not found in ISO")
+                
+                # Step 2: Use vobcopy to decrypt the extracted VOB files
+                logger.info("Using vobcopy to decrypt extracted VOB files")
+                vobcopy_strategies = [
+                    # Strategy 1: Mirror mode (entire DVD) with fast processing
+                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m", "-f", "-F4"],
+                    # Strategy 2: Mirror mode (entire DVD) without fast processing
+                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m", "-f"],
+                    # Strategy 3: Main title (longest) with fast processing
+                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-M", "-f", "-F4"],
+                    # Strategy 4: Main title (longest) without fast processing
+                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-M", "-f"],
+                    # Strategy 5: Basic extraction without special flags
+                    ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-f"]
+                ]
+                
+                vobcopy_success = False
+                for i, vobcopy_cmd in enumerate(vobcopy_strategies, 1):
+                    logger.info("Trying vobcopy strategy {}: {}", i, " ".join(vobcopy_cmd))
+                    try:
+                        # For the first strategy, show progress and use longer timeout
+                        if i == 1:
+                            logger.info("Mirror strategy - showing progress and using timeout")
+                            result = subprocess.run(vobcopy_cmd, check=True, timeout=600)  # 10 minute timeout for CSS decryption
                         else:
-                            logger.error("No VOB files found after 7z extraction")
-                            raise ValueError("No VOB files found after 7z extraction")
-                    else:
-                        logger.error("VIDEO_TS directory not found after 7z extraction")
-                        raise ValueError("VIDEO_TS directory not found in ISO")
-                except Exception as e:
-                    logger.error("7z fallback also failed: {}", e)
-                    raise ValueError("Both vobcopy and 7z extraction failed - DVD may be corrupted or unsupported")
+                            # Suppress stderr for other strategies to avoid verbose output
+                            result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL, timeout=60)  # 1 minute timeout
+                        
+                        vobcopy_success = True
+                        logger.info("vobcopy strategy {} succeeded", i)
+                        break
+                    except subprocess.CalledProcessError as e:
+                        logger.warning("vobcopy strategy {} failed with exit code {}: {}", i, e.returncode, e)
+                        # Clean up failed attempt
+                        if os.path.exists(vobcopy_dir):
+                            shutil.rmtree(vobcopy_dir, ignore_errors=True)
+                            os.makedirs(vobcopy_dir, exist_ok=True)
+                        continue
+                    except subprocess.TimeoutExpired:
+                        logger.warning("vobcopy strategy {} timed out", i)
+                        # Clean up failed attempt
+                        if os.path.exists(vobcopy_dir):
+                            shutil.rmtree(vobcopy_dir, ignore_errors=True)
+                            os.makedirs(vobcopy_dir, exist_ok=True)
+                        continue
+                
+                if not vobcopy_success:
+                    logger.error("All vobcopy strategies failed - DVD may be corrupted or unsupported")
+                    raise ValueError("All vobcopy strategies failed - DVD may be corrupted or unsupported")
+                    
+            finally:
+                # Clean up extraction directory
+                if os.path.exists(extract_dir):
+                    shutil.rmtree(extract_dir, ignore_errors=True)
             
             # Find decrypted VOB files
             vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
