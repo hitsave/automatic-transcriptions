@@ -242,6 +242,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                 
                 # Step 2: Use vobcopy to decrypt the extracted VOB files
                 logger.info("Using vobcopy to decrypt extracted VOB files")
+                
                 vobcopy_strategies = [
                     # Strategy 1: Mirror mode (entire DVD) with fast processing
                     ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m", "-f", "-F4"],
