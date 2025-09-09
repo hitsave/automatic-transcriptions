@@ -94,6 +94,16 @@ def is_gpu_available() -> bool:
         if is_wsl2:
             logger.debug("Running in WSL2 - device files may be virtualized")
         
+        # Check if we're in Docker Desktop with WSL2 backend (device files not exposed)
+        # Docker Desktop with WSL2 backend often doesn't expose /dev/nvidia* files
+        is_docker_desktop_wsl2 = (
+            nvidia_smi_works and 
+            not nvidia_device and 
+            not os.path.exists('/dev/cuda0')
+        )
+        if is_docker_desktop_wsl2:
+            logger.debug("Docker Desktop WSL2 detected - device files not exposed but GPU accessible")
+        
         # Method 2: Check for CUDA_VISIBLE_DEVICES environment variable
         cuda_visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES', '')
         logger.debug("CUDA_VISIBLE_DEVICES: {}", cuda_visible_devices)
@@ -121,11 +131,14 @@ def is_gpu_available() -> bool:
         
         # GPU is available if nvidia-smi works (primary method for WSL2/Docker)
         # In WSL2, device files are virtualized but nvidia-smi still works
-        if is_wsl2:
-            # In WSL2, prioritize nvidia-smi over device files
+        if is_wsl2 or is_docker_desktop_wsl2:
+            # In WSL2 or Docker Desktop WSL2, prioritize nvidia-smi over device files
             gpu_available = nvidia_smi_works or (cuda_visible_devices and cuda_visible_devices != '')
             if nvidia_smi_works and not nvidia_device:
-                logger.info("WSL2 detected: Using nvidia-smi for GPU detection (device files virtualized)")
+                if is_docker_desktop_wsl2:
+                    logger.info("Docker Desktop WSL2 detected: Using nvidia-smi for GPU detection (device files not exposed)")
+                else:
+                    logger.info("WSL2 detected: Using nvidia-smi for GPU detection (device files virtualized)")
         else:
             # On native Linux, use all methods
             gpu_available = nvidia_smi_works or nvidia_device or (cuda_visible_devices and cuda_visible_devices != '')
@@ -157,7 +170,10 @@ def is_gpu_available() -> bool:
                     # If nvidia-smi works but NVENC test fails due to device access issues,
                     # we should still allow GPU usage as the actual encoding might work
                     if nvidia_smi_works and ('unsupported device' in test_result.stderr or 'No capable devices found' in test_result.stderr):
-                        logger.info("NVENC test failed due to device access issues, but nvidia-smi works - allowing GPU usage")
+                        if is_docker_desktop_wsl2:
+                            logger.info("Docker Desktop WSL2: NVENC test failed due to device access issues, but nvidia-smi works - allowing GPU usage")
+                        else:
+                            logger.info("NVENC test failed due to device access issues, but nvidia-smi works - allowing GPU usage")
                         return True
                 return nvenc_works
             except subprocess.TimeoutExpired:
