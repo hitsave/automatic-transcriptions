@@ -223,11 +223,11 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
             
             # Use vobcopy to decrypt the VOB files directly from ISO
             # Use -M for main title (longest) instead of -m for mirror (entire DVD)
-            # Use -v for verbose progress and -F for faster processing
-            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-M", "-f", "-v", "-F", "4"]
+            # Use -F for faster processing, suppress verbose CSS key output
+            vobcopy_cmd = ["vobcopy", "-i", source_path, "-o", vobcopy_dir, "-M", "-f", "-F", "4"]
             logger.info("Running vobcopy to decrypt VOB files (this may take several minutes)")
-            # Don't suppress stderr for vobcopy so we can see progress
-            result = subprocess.run(vobcopy_cmd, check=True)
+            # Suppress stderr to avoid verbose CSS key retrieval output
+            result = subprocess.run(vobcopy_cmd, check=True, stderr=subprocess.DEVNULL)
             
             # Find decrypted VOB files
             vob_files = [f for f in os.listdir(vobcopy_dir) if f.upper().endswith('.VOB')]
