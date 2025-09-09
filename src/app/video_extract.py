@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
 
-def run(cmd: list[str], capture_errors: bool = False) -> None:
+def run(cmd: list[str], capture_errors: bool = False) -> subprocess.CompletedProcess:
     logger.debug("Running: {}", " ".join(cmd))
     if capture_errors:
         # Capture stderr to see what's failing
@@ -16,10 +16,12 @@ def run(cmd: list[str], capture_errors: bool = False) -> None:
             logger.error("STDOUT: {}", result.stdout)
             logger.error("STDERR: {}", result.stderr)
             raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+        return result
     else:
         # Redirect stderr to /dev/null to suppress FFmpeg decoder errors
         with open('/dev/null', 'w') as devnull:
-            subprocess.run(cmd, check=True, stderr=devnull)
+            result = subprocess.run(cmd, check=True, stderr=devnull)
+        return result
 
 
 def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str, preset: str) -> tuple[str, float, float]:
@@ -63,10 +65,23 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         vob_output,
     ]
     try:
-        run(cmd, capture_errors=True)
+        result = run(cmd, capture_errors=True)
     except subprocess.CalledProcessError as e:
-        logger.error("Failed to process VOB file {}: {}", vob_file, e)
-        raise
+        # If NVENC fails, try with CPU encoder as fallback
+        if encoder == "h264_nvenc" and ("unsupported device" in str(e) or "No capable devices found" in str(e)):
+            logger.warning("NVENC failed for {}, falling back to CPU encoder", vob_file)
+            cpu_cmd = cmd.copy()
+            cpu_cmd[cpu_cmd.index("h264_nvenc")] = "libx264"
+            cpu_cmd[cpu_cmd.index("p7")] = "slow"
+            try:
+                run(cpu_cmd, capture_errors=True)
+                logger.info("Successfully processed {} with CPU fallback", vob_file)
+            except subprocess.CalledProcessError as cpu_e:
+                logger.error("Both NVENC and CPU encoding failed for {}: {}", vob_file, cpu_e)
+                raise
+        else:
+            logger.error("Failed to process VOB file {}: {}", vob_file, e)
+            raise
     
     ffmpeg_elapsed = time.time() - ffmpeg_start_time
     vob_elapsed = time.time() - vob_start_time
