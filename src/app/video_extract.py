@@ -163,7 +163,7 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str) -> None:
         # Use 7z to extract VIDEO_TS from ISO, then process VOB files directly
         try:
             # Extract VIDEO_TS from ISO using 7z
-            extract_dir = os.path.join(os.path.dirname(output_mp4), "temp_extract")
+            extract_dir = "/data/work/temp_extract"
             if os.path.exists(extract_dir):
                 shutil.rmtree(extract_dir, ignore_errors=True)
             os.makedirs(extract_dir, exist_ok=True)
