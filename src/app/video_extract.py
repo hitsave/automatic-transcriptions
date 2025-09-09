@@ -235,7 +235,8 @@ def extract_main_title_to_mp4(source_path: str, output_mp4: str, force_encoder: 
                 os.makedirs(vobcopy_dir, exist_ok=True)
                 
                 # Use vobcopy to decrypt the VOB files
-                vobcopy_cmd = ["vobcopy", "-i", video_ts_path, "-o", vobcopy_dir, "-m"]
+                # vobcopy expects the parent directory of VIDEO_TS, not VIDEO_TS itself
+                vobcopy_cmd = ["vobcopy", "-i", extract_dir, "-o", vobcopy_dir, "-m"]
                 logger.info("Running vobcopy to decrypt VOB files")
                 run(vobcopy_cmd)
                 
