@@ -15,7 +15,7 @@ def run(cmd: list[str], capture_errors: bool = False) -> subprocess.CompletedPro
             logger.error("Command failed with exit code {}: {}", result.returncode, " ".join(cmd))
             logger.error("STDOUT: {}", result.stdout)
             logger.error("STDERR: {}", result.stderr)
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            # Don't raise exception here - let the calling code handle it
         return result
     else:
         # Redirect stderr to /dev/null to suppress FFmpeg decoder errors
@@ -45,6 +45,7 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         logger.warning("Could not probe VOB file {}: {}", vob_file, e)
         return vob_file, 0.0, 0.0
 
+    # Build command with encoder-specific parameters
     cmd = [
         "ffmpeg", "-y",
         "-hide_banner", "-loglevel", "error",  # Show errors but not warnings
@@ -56,32 +57,50 @@ def process_vob_file(vob_path: str, vob_output: str, vob_file: str, encoder: str
         "-flags", "+low_delay",
         "-i", vob_path,
         "-map", "0:v:0", "-map", "0:a:0?",
-        "-c:v", encoder, "-preset", preset, "-crf", "18",
+        "-c:v", encoder, "-preset", preset,
+    ]
+    
+    # Add encoder-specific quality settings
+    if encoder == "h264_nvenc":
+        # NVENC uses bitrate, not CRF - use more conservative settings for RTX 4090
+        cmd.extend(["-b:v", "4M", "-maxrate", "6M", "-bufsize", "8M", "-rc", "vbr"])
+    else:
+        # CPU encoders use CRF
+        cmd.extend(["-crf", "18"])
+    
+    cmd.extend([
         "-vf", "bwdif=mode=1:parity=auto",
         "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart",
         "-avoid_negative_ts", "make_zero",
         "-max_muxing_queue_size", "1024",
         vob_output,
-    ]
-    try:
-        result = run(cmd, capture_errors=True)
-    except subprocess.CalledProcessError as e:
+    ])
+    result = run(cmd, capture_errors=True)
+    
+    # Check if the command failed
+    if result.returncode != 0:
         # If NVENC fails, try with CPU encoder as fallback
-        if encoder == "h264_nvenc" and ("unsupported device" in str(e) or "No capable devices found" in str(e)):
+        if encoder == "h264_nvenc" and ("unsupported device" in result.stderr or "No capable devices found" in result.stderr or "Error while opening encoder" in result.stderr or "CUDA_ERROR_NO_DEVICE" in result.stderr):
             logger.warning("NVENC failed for {}, falling back to CPU encoder", vob_file)
             cpu_cmd = cmd.copy()
             cpu_cmd[cpu_cmd.index("h264_nvenc")] = "libx264"
             cpu_cmd[cpu_cmd.index("p7")] = "slow"
-            try:
-                run(cpu_cmd, capture_errors=True)
+            # Replace NVENC bitrate parameters with CRF for CPU encoder
+            if "-b:v" in cpu_cmd:
+                bv_index = cpu_cmd.index("-b:v")
+                # Remove bitrate, maxrate, bufsize, and rc parameters
+                cpu_cmd = cpu_cmd[:bv_index] + ["-crf", "18"] + cpu_cmd[bv_index+8:]
+            
+            cpu_result = run(cpu_cmd, capture_errors=True)
+            if cpu_result.returncode != 0:
+                logger.error("Both NVENC and CPU encoding failed for {}: {}", vob_file, cpu_result.stderr)
+                raise subprocess.CalledProcessError(cpu_result.returncode, cpu_cmd, cpu_result.stdout, cpu_result.stderr)
+            else:
                 logger.info("Successfully processed {} with CPU fallback", vob_file)
-            except subprocess.CalledProcessError as cpu_e:
-                logger.error("Both NVENC and CPU encoding failed for {}: {}", vob_file, cpu_e)
-                raise
         else:
-            logger.error("Failed to process VOB file {}: {}", vob_file, e)
-            raise
+            logger.error("Failed to process VOB file {}: {}", vob_file, result.stderr)
+            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     
     ffmpeg_elapsed = time.time() - ffmpeg_start_time
     vob_elapsed = time.time() - vob_start_time

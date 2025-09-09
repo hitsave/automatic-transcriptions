@@ -30,7 +30,7 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
        libnvidia-container1 \
-       libnvidia-encode-575 \
+       libnvidia-encode1 \
     && ln -s /usr/bin/python3 /usr/bin/python \
     && apt-get dist-clean
 
